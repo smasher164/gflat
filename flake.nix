@@ -21,7 +21,7 @@
       {
         devShell = pkgs.mkShell {
           buildInputs = [
-            pkgs.go_1_18
+            pkgs.go_1_20
             pkgs.gopls
             pkgs.go-outline
             pkgs.go-tools
