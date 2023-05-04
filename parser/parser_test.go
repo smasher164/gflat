@@ -42,7 +42,12 @@ func Test(t *testing.T) {
 			// }
 			// foo();
 			// `),
-			Data: []byte(`x = y = z? = 2 ** 3 ** 4`),
+			// Data: []byte(`x = y = z? = 2 ** 3 ** 4`),
+			Data: []byte(`
+			type F = 'a.'b.
+				| A (x: 'a)
+				| B (x: 'b)
+			`),
 		}})
 	if err != nil {
 		t.Fatal(err)

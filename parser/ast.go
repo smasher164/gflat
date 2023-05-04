@@ -34,10 +34,9 @@ var (
 	_ Node = If{}
 	_ Node = IfElse{}
 	_ Node = TypeDecl{}
-	_ Node = ConstrainedTypeParameter{}
-	_ Node = ConstrainedTypeArgument{}
 	_ Node = Number{}
 	_ Node = NamedTypeParameter{}
+	_ Node = NamedTypeArgument{}
 	_ Node = NamedType{}
 	_ Node = SumType{}
 	_ Node = SumTypeElement{}
@@ -342,13 +341,86 @@ func (n TupleParam) ASTString(depth int) string {
 		n.Type.ASTString(depth+1))
 }
 
-type Function struct {
-	Fun   lexer.Token
-	Arg   Node
+// type Function struct {
+// 	Fun   lexer.Token
+// 	Arg   Node
+// 	Colon lexer.Token
+// 	Type  Node
+// 	Arrow lexer.Token
+// 	Body  Node
+// }
+
+type FunctionSignature struct {
+	Param  Node
+	Arrows []Node
+}
+
+func (n FunctionSignature) LeadingTrivia() []lexer.Token {
+	return leadingTriviaOf(n.Param)
+}
+
+func (n FunctionSignature) Span() lexer.Span {
+	return spanOf(n.Param).Add(spanOf(n.Arrows))
+}
+
+func (n FunctionSignature) ASTString(depth int) string {
+	return fmt.Sprintf(
+		"FunctionSignature\n%sParam: %s\n%sArrows: %s",
+		indent(depth+1),
+		n.Param.ASTString(depth+1), indent(depth+1),
+		printNodeSlice(depth+1, n.Arrows))
+}
+
+type Param struct {
+	Name  Ident
 	Colon lexer.Token
 	Type  Node
+}
+
+func (n Param) LeadingTrivia() []lexer.Token {
+	return n.Name.LeadingTrivia()
+}
+
+func (n Param) Span() lexer.Span {
+	return n.Name.Span().Add(n.Colon.Span).Add(spanOf(n.Type))
+}
+
+func (n Param) ASTString(depth int) string {
+	return fmt.Sprintf(
+		"Param\n%sName: %s\n%sColon: %s\n%sType: %s",
+		indent(depth+1),
+		n.Name.ASTString(depth+1), indent(depth+1),
+		n.Colon, indent(depth+1),
+		n.Type.ASTString(depth+1))
+}
+
+type Arrow struct {
 	Arrow lexer.Token
-	Body  Node
+	Type  Node
+}
+
+func (n Arrow) LeadingTrivia() []lexer.Token {
+	return n.Arrow.LeadingTrivia
+}
+
+func (n Arrow) Span() lexer.Span {
+	return n.Arrow.Span.Add(spanOf(n.Type))
+}
+
+func (n Arrow) ASTString(depth int) string {
+	return fmt.Sprintf(
+		"Arrow\n%sArrow: %s\n%sType: %s",
+		indent(depth+1),
+		n.Arrow, indent(depth+1),
+		n.Type.ASTString(depth+1))
+}
+
+type Function struct {
+	Fun       lexer.Token
+	Name      *Ident
+	Signature FunctionSignature
+	Equals    lexer.Token
+	Body      Node
 }
 
 func (f Function) LeadingTrivia() []lexer.Token {
@@ -360,14 +432,15 @@ func (f Function) Span() lexer.Span {
 }
 
 func (f Function) ASTString(depth int) string {
-	if f.Colon.Type == lexer.Colon {
-		return fmt.Sprintf(
-			"Function\n%sFun: %s\n%sArg: %s\n%sColon: %s\n%sType: %s\n%sArrow: %s\n%sBody: %s",
-			indent(depth+1), f.Fun, indent(depth+1), f.Arg.ASTString(depth+1), indent(depth+1), f.Colon, indent(depth+1), f.Type.ASTString(depth+1), indent(depth+1), f.Arrow, indent(depth+1), f.Body.ASTString(depth+1))
-	}
-	return fmt.Sprintf(
-		"Function\n%sFun: %s\n%sArg: %s\n%sArrow: %s\n%sBody: %s",
-		indent(depth+1), f.Fun, indent(depth+1), f.Arg.ASTString(depth+1), indent(depth+1), f.Arrow, indent(depth+1), f.Body.ASTString(depth+1))
+	return "unimplemented"
+	// if f.Colon.Type == lexer.Colon {
+	// 	return fmt.Sprintf(
+	// 		"Function\n%sFun: %s\n%sArg: %s\n%sColon: %s\n%sType: %s\n%sArrow: %s\n%sBody: %s",
+	// 		indent(depth+1), f.Fun, indent(depth+1), f.Arg.ASTString(depth+1), indent(depth+1), f.Colon, indent(depth+1), f.Type.ASTString(depth+1), indent(depth+1), f.Arrow, indent(depth+1), f.Body.ASTString(depth+1))
+	// }
+	// return fmt.Sprintf(
+	// 	"Function\n%sFun: %s\n%sArg: %s\n%sArrow: %s\n%sBody: %s",
+	// 	indent(depth+1), f.Fun, indent(depth+1), f.Arg.ASTString(depth+1), indent(depth+1), f.Arrow, indent(depth+1), f.Body.ASTString(depth+1))
 }
 
 type TupleElement struct {
@@ -558,52 +631,6 @@ func (t TypeDecl) ASTString(depth int) string {
 		t.Body.ASTString(depth+1))
 }
 
-type ConstrainedTypeParameter struct {
-	Param      Node
-	Colon      lexer.Token
-	Constraint Node
-}
-
-func (c ConstrainedTypeParameter) LeadingTrivia() []lexer.Token {
-	return leadingTriviaOf(c.Param)
-}
-
-func (c ConstrainedTypeParameter) Span() lexer.Span {
-	return c.Param.Span().Add(spanOf(c.Constraint))
-}
-
-func (c ConstrainedTypeParameter) ASTString(depth int) string {
-	return fmt.Sprintf(
-		"ConstrainedTypeParameter\n%sParam: %s\n%sColon: %s\n%sConstraint: %s",
-		indent(depth+1),
-		c.Param.ASTString(depth+1), indent(depth+1),
-		c.Colon, indent(depth+1),
-		c.Constraint.ASTString(depth+1))
-}
-
-type ConstrainedTypeArgument struct {
-	Arg        Node
-	Equals     lexer.Token
-	Constraint Node
-}
-
-func (c ConstrainedTypeArgument) LeadingTrivia() []lexer.Token {
-	return leadingTriviaOf(c.Arg)
-}
-
-func (c ConstrainedTypeArgument) Span() lexer.Span {
-	return c.Arg.Span().Add(spanOf(c.Constraint))
-}
-
-func (c ConstrainedTypeArgument) ASTString(depth int) string {
-	return fmt.Sprintf(
-		"ConstrainedTypeArgument\n%sArg: %s\n%sEquals: %s\n%sConstraint: %s",
-		indent(depth+1),
-		c.Arg.ASTString(depth+1), indent(depth+1),
-		c.Equals, indent(depth+1),
-		c.Constraint.ASTString(depth+1))
-}
-
 type Number struct {
 	Lit lexer.Token
 }
@@ -644,6 +671,23 @@ func (n NamedTypeParameter) ASTString(depth int) string {
 	return fmt.Sprintf("NamedTypeParameter\n%sSingleQuote: %s\n%sName: %s", indent(depth+1), n.SingleQuote, indent(depth+1), n.Name.ASTString(depth+1))
 }
 
+type NamedTypeArgument struct {
+	SingleQuote lexer.Token
+	Name        Node
+}
+
+func (n NamedTypeArgument) LeadingTrivia() []lexer.Token {
+	return n.SingleQuote.LeadingTrivia
+}
+
+func (n NamedTypeArgument) Span() lexer.Span {
+	return n.SingleQuote.Span.Add(spanOf(n.Name))
+}
+
+func (n NamedTypeArgument) ASTString(depth int) string {
+	return fmt.Sprintf("NamedTypeArgument\n%sSingleQuote: %s\n%sName: %s", indent(depth+1), n.SingleQuote, indent(depth+1), n.Name.ASTString(depth+1))
+}
+
 type NamedType struct {
 	Name Node
 	Args []Node
@@ -681,9 +725,9 @@ func (s SumType) ASTString(depth int) string {
 }
 
 type SumTypeElement struct {
-	Or    lexer.Token
-	Name  Node
-	Tuple Node
+	Or   lexer.Token
+	Name Node
+	Type Node
 }
 
 func (s SumTypeElement) LeadingTrivia() []lexer.Token {
@@ -691,21 +735,38 @@ func (s SumTypeElement) LeadingTrivia() []lexer.Token {
 }
 
 func (s SumTypeElement) Span() lexer.Span {
-	return s.Or.Span.Add(spanOf(s.Name)).Add(spanOf(s.Tuple))
+	return s.Or.Span.Add(spanOf(s.Name)).Add(spanOf(s.Type))
 }
 
 func (s SumTypeElement) ASTString(depth int) string {
-	if s.Tuple == nil {
+	if s.Type == nil {
 		return fmt.Sprintf("SumTypeElement\n%sOr: %s\n%sName: %s", indent(depth+1), s.Or, indent(depth+1), s.Name.ASTString(depth+1))
 	}
-	return fmt.Sprintf("SumTypeElement\n%sOr: %s\n%sName: %s\n%sTuple: %s", indent(depth+1), s.Or, indent(depth+1), s.Name.ASTString(depth+1), indent(depth+1), s.Tuple.ASTString(depth+1))
+	return fmt.Sprintf("SumTypeElement\n%sOr: %s\n%sName: %s\n%sType: %s", indent(depth+1), s.Or, indent(depth+1), s.Name.ASTString(depth+1), indent(depth+1), s.Type.ASTString(depth+1))
+}
+
+type ForallType struct {
+	TypeArg Node
+	Period  lexer.Token
+	Type    Node
+}
+
+func (f ForallType) LeadingTrivia() []lexer.Token {
+	return f.TypeArg.LeadingTrivia()
+}
+
+func (f ForallType) Span() lexer.Span {
+	return spanOf(f.TypeArg).Add(spanOf(f.Period)).Add(spanOf(f.Type))
+}
+
+func (f ForallType) ASTString(depth int) string {
+	return fmt.Sprintf("ForallType\n%sTypeArg: %s\n%sPeriod: %s\n%sType: %s", indent(depth+1), f.TypeArg.ASTString(depth+1), indent(depth+1), f.Period, indent(depth+1), f.Type.ASTString(depth+1))
 }
 
 type FunctionType struct {
 	Fun    lexer.Token
-	Arg    Node
-	Arrow  lexer.Token
-	Result Node
+	Param  Node
+	Arrows []Node
 }
 
 func (f FunctionType) LeadingTrivia() []lexer.Token {
@@ -713,17 +774,22 @@ func (f FunctionType) LeadingTrivia() []lexer.Token {
 }
 
 func (f FunctionType) Span() lexer.Span {
-	return f.Fun.Span.Add(spanOf(f.Arg)).Add(spanOf(f.Result))
+	return f.Fun.Span.Add(spanOf(f.Param)).Add(spanOf(f.Arrows))
 }
 
 func (f FunctionType) ASTString(depth int) string {
-	return fmt.Sprintf("FunctionType\n%sFun: %s\n%sArg: %s\n%sArrow: %s\n%sResult: %s", indent(depth+1), f.Fun, indent(depth+1), f.Arg.ASTString(depth+1), indent(depth+1), f.Arrow, indent(depth+1), f.Result.ASTString(depth+1))
+	return fmt.Sprintf(
+		"FunctionType\n%sFun: %s\n%sParam: %s\n%sArrows: %s",
+		indent(depth+1), f.Fun, indent(depth+1), f.Param.ASTString(depth+1),
+		indent(depth+1), printNodeSlice(depth+1, f.Arrows))
 }
 
 type Field struct {
-	Name  Node
-	Colon lexer.Token
-	Type  Node
+	Name    Node
+	Colon   lexer.Token
+	Type    Node
+	Equals  lexer.Token
+	Default Node
 }
 
 func (f Field) LeadingTrivia() []lexer.Token {
