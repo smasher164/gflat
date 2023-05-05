@@ -178,7 +178,7 @@ func (p *parser) restDecl() (lhs Node, equals lexer.Token, rhs Node) {
 // fun ident: TypeBody -> TypeBody
 // fun TupleType -> TypeBody
 // fun .. -> .. ->
-func (p *parser) parseFunctionSignature() Node {
+func (p *parser) parseFunctionSignature() FunctionSignature {
 	defer p.trace("parseFunctionSignature")()
 	var fun FunctionSignature
 	if p.tok.Type == lexer.Ident {
@@ -218,7 +218,7 @@ func (p *parser) parseFun() Node {
 		}
 
 	}
-	fun.Signature = p.parseFunctionSignature().(FunctionSignature)
+	fun.Signature = p.parseFunctionSignature()
 	if p.tok.Type != lexer.Equals {
 		panic("expected = after function signature")
 	}
@@ -573,7 +573,7 @@ func (p *parser) parseCase() Node {
 	if p.tok.Type == lexer.If {
 		patCase.Guard = p.parseGuard()
 	}
-	if p.tok.Type != lexer.RightArrow {
+	if p.tok.Type != lexer.RightArrow { // TODO: should we use a fat arrow here? | x : fun int -> int -> x is ambiguous.
 		panic("missing arrow")
 	}
 	patCase.Arrow = p.tok
@@ -601,7 +601,12 @@ func (p *parser) parseGuard() Node {
 // TuplePattern = "(" { NestedPattern [ "," ] } ")"
 func (p *parser) parsePattern() Node {
 	defer p.trace("parsePattern")()
+	var tag Node
 	var pat Node
+	if p.tok.Type == lexer.Ident {
+		tag = Ident{Name: p.tok}
+		p.next()
+	}
 	switch p.tok.Type {
 	case lexer.Ident:
 		pat = Ident{Name: p.tok}
@@ -613,6 +618,15 @@ func (p *parser) parsePattern() Node {
 		pat = p.parseString()
 	case lexer.LeftParen:
 		pat = p.parseTuplePattern()
+	}
+	if tag != nil {
+		if pat != nil {
+			pat = CallExpr{
+				Elements: []Node{tag, pat},
+			}
+		} else {
+			pat = tag
+		}
 	}
 	if p.tok.Type == lexer.Colon {
 		colon := p.tok
@@ -951,7 +965,6 @@ func (p *parser) parseSumType() Node {
 }
 
 // "=" is for default values.
-// TODO: parse type declarations, with type parameters.
 func (p *parser) parseTupleType() Node {
 	defer p.trace("parseTupleType")()
 	lpar := p.tok

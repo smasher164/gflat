@@ -44,9 +44,8 @@ func Test(t *testing.T) {
 			// `),
 			// Data: []byte(`x = y = z? = 2 ** 3 ** 4`),
 			Data: []byte(`
-			type F = 'a.'b.
-				| A (x: 'a)
-				| B (x: 'b)
+			if (a)
+			| Foo -> x
 			`),
 		}})
 	if err != nil {

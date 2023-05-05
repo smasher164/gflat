@@ -386,6 +386,12 @@ func (n Param) Span() lexer.Span {
 }
 
 func (n Param) ASTString(depth int) string {
+	if n.Type == nil {
+		return fmt.Sprintf(
+			"Param\n%sName: %s",
+			indent(depth+1),
+			n.Name.ASTString(depth+1))
+	}
 	return fmt.Sprintf(
 		"Param\n%sName: %s\n%sColon: %s\n%sType: %s",
 		indent(depth+1),
@@ -432,15 +438,15 @@ func (f Function) Span() lexer.Span {
 }
 
 func (f Function) ASTString(depth int) string {
-	return "unimplemented"
-	// if f.Colon.Type == lexer.Colon {
-	// 	return fmt.Sprintf(
-	// 		"Function\n%sFun: %s\n%sArg: %s\n%sColon: %s\n%sType: %s\n%sArrow: %s\n%sBody: %s",
-	// 		indent(depth+1), f.Fun, indent(depth+1), f.Arg.ASTString(depth+1), indent(depth+1), f.Colon, indent(depth+1), f.Type.ASTString(depth+1), indent(depth+1), f.Arrow, indent(depth+1), f.Body.ASTString(depth+1))
-	// }
-	// return fmt.Sprintf(
-	// 	"Function\n%sFun: %s\n%sArg: %s\n%sArrow: %s\n%sBody: %s",
-	// 	indent(depth+1), f.Fun, indent(depth+1), f.Arg.ASTString(depth+1), indent(depth+1), f.Arrow, indent(depth+1), f.Body.ASTString(depth+1))
+	if f.Name != nil {
+		return fmt.Sprintf(
+			"Function\n%sFun: %s\n%sName: %s\n%sSignature: %s\n%sEquals: %s\n%sBody: %s",
+			indent(depth+1), f.Fun, indent(depth+1), f.Name.ASTString(depth+1), indent(depth+1), f.Signature.ASTString(depth+1), indent(depth+1), f.Equals, indent(depth+1), f.Body.ASTString(depth+1))
+	}
+	return fmt.Sprintf(
+		"Function\n%sFun: %s\n%sSignature: %s\n%sEquals: %s\n%sBody: %s",
+		indent(depth+1), f.Fun, indent(depth+1), f.Signature.ASTString(depth+1),
+		indent(depth+1), f.Equals, indent(depth+1), f.Body.ASTString(depth+1))
 }
 
 type TupleElement struct {
@@ -897,7 +903,10 @@ func (p PatternCase) Span() lexer.Span {
 
 func (p PatternCase) ASTString(depth int) string {
 	if p.Guard == nil {
-		return fmt.Sprintf("PatternCase\n%sOr: %s\n%sPattern: %s\n%sArrow: %s\n%sExpr: %s\n%sComma: %s", indent(depth+1), p.Or, indent(depth+1), p.Pattern.ASTString(depth+1), indent(depth+1), p.Arrow, indent(depth+1), p.Expr.ASTString(depth+1), indent(depth+1), p.Comma)
+		return fmt.Sprintf(
+			"PatternCase\n%sOr: %s\n%sPattern: %s\n%sArrow: %s\n%sExpr: %s\n%sComma: %s", indent(depth+1), p.Or, indent(depth+1),
+			p.Pattern.ASTString(depth+1), indent(depth+1), p.Arrow, indent(depth+1),
+			p.Expr.ASTString(depth+1), indent(depth+1), p.Comma)
 	}
 	return fmt.Sprintf("PatternCase\n%sOr: %s\n%sPattern: %s\n%sGuard: %s\n%sArrow: %s\n%sExpr: %s\n%sComma: %s", indent(depth+1), p.Or, indent(depth+1), p.Pattern.ASTString(depth+1), indent(depth+1), p.Guard.ASTString(depth+1), indent(depth+1), p.Arrow, indent(depth+1), p.Expr.ASTString(depth+1), indent(depth+1), p.Comma)
 }
@@ -916,7 +925,9 @@ func (i IfMatch) Span() lexer.Span {
 }
 
 func (i IfMatch) ASTString(depth int) string {
-	return fmt.Sprintf("IfMatch\n%sIfHeader: %s\n%sCases: %s", indent(depth+1), i.IfHeader.ASTString(depth+1), indent(depth+1), printNodeSlice(depth+1, i.Cases))
+	return fmt.Sprintf(
+		"IfMatch\n%sIfHeader: %s\n%sCases: %s", indent(depth+1), i.IfHeader.ASTString(depth+1), indent(depth+1),
+		printNodeSlice(depth+1, i.Cases))
 }
 
 type StringPart struct {
