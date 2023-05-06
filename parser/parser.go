@@ -702,9 +702,6 @@ func (p *parser) parseTuple() Node {
 			elem.Comma = p.tok
 			p.next()
 		}
-		if p.tok.Type == lexer.StatementTerminator {
-			p.next()
-		}
 		tuple.Elements = append(tuple.Elements, elem)
 	}
 	if p.tok.Type != lexer.RightParen {

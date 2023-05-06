@@ -50,19 +50,19 @@ func Test(t *testing.T) {
 			// 	| B -> 2
 			// print x
 			// `),
-			Data: []byte(`
-			type A = (
-				a: Foo,
-				'TypeVar,
-				fun int -> int,
-			)
-			`),
 			// Data: []byte(`
-			// let x = (
-			// 	a,
-			// 	b,
+			// type A = (
+			// 	a: Foo,
+			// 	'TypeVar,
+			// 	fun int -> int,
 			// )
 			// `),
+			Data: []byte(`
+			let x = (
+				a,
+				b,
+			)
+			`),
 			// Data: []byte(`
 			// let x = if(x)
 			// 	| A -> 1,
