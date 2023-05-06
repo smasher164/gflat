@@ -807,6 +807,9 @@ func (f Field) Span() lexer.Span {
 }
 
 func (f Field) ASTString(depth int) string {
+	if f.Default != nil {
+		return fmt.Sprintf("Field\n%sName: %s\n%sColon: %s\n%sType: %s\n%sEquals: %s\n%sDefault: %s", indent(depth+1), f.Name.ASTString(depth+1), indent(depth+1), f.Colon, indent(depth+1), f.Type.ASTString(depth+1), indent(depth+1), f.Equals, indent(depth+1), f.Default.ASTString(depth+1))
+	}
 	return fmt.Sprintf("Field\n%sName: %s\n%sColon: %s\n%sType: %s", indent(depth+1), f.Name.ASTString(depth+1), indent(depth+1), f.Colon, indent(depth+1), f.Type.ASTString(depth+1))
 }
 

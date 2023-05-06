@@ -21,15 +21,21 @@ type interpFrame struct {
 }
 
 type Lexer struct {
-	ch            rune
-	pos           int
-	i             int // position in buffer
-	err           error
-	lexStringNext bool
-	buf           []rune
-	rdr           *bufio.Reader
-	stringStack   []interpFrame
-	lines         []int
+	prev               Token
+	emittedSemi        bool
+	shouldInsertBefore bool
+	shouldInsertAfter  bool
+	beforeToksToCheck  []TokenType
+	afterToksToCheck   []TokenType
+	ch                 rune
+	pos                int
+	i                  int // position in buffer
+	err                error
+	lexStringNext      bool
+	buf                []rune
+	rdr                *bufio.Reader
+	stringStack        []interpFrame
+	lines              []int
 }
 
 const eof = -1
@@ -556,13 +562,33 @@ func (l *Lexer) NextToken() Token {
 }
 
 func (l *Lexer) Next() Token {
+	if l.emittedSemi {
+		l.emittedSemi = false
+		return l.prev
+	}
 	var t Token
 	var trivia []Token
 	for t = l.NextToken(); t.Type == Whitespace || t.Type == SingleLineComment; t = l.NextToken() {
 		trivia = append(trivia, t)
 	}
 	t.LeadingTrivia = trivia
+	if l.prev.OnDifferentLines(t) && l.prev.IsBeforeSemicolon(l.shouldInsertBefore, l.beforeToksToCheck) && t.IsAfterSemicolon(l.shouldInsertAfter, l.afterToksToCheck) {
+		l.prev = t
+		l.emittedSemi = true
+		return Token{Type: StatementTerminator, Span: Span{Start: t.Span.Start, End: t.Span.Start}}
+	}
+	l.prev = t
 	return t
+}
+
+func (l *Lexer) ShouldInsertBefore(status bool, toksToCheck []TokenType) {
+	l.shouldInsertBefore = status
+	l.beforeToksToCheck = toksToCheck
+}
+
+func (l *Lexer) ShouldInsertAfter(status bool, toksToCheck []TokenType) {
+	l.shouldInsertAfter = status
+	l.afterToksToCheck = toksToCheck
 }
 
 func NewLexer(filename string, fsys fs.FS) (*Lexer, error) {

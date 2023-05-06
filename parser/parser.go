@@ -9,14 +9,32 @@ import (
 const debug = true
 
 type parser struct {
-	l      Lexer
-	tok    lexer.Token
-	buf    []lexer.Token // rework this when you need to start backtracking.
-	indent int
+	shouldInsertAfter  bool
+	afterToksToCheck   []lexer.TokenType
+	shouldInsertBefore bool
+	beforeToksToCheck  []lexer.TokenType
+	l                  Lexer
+	tok                lexer.Token
+	buf                []lexer.Token // rework this when you need to start backtracking.
+	indent             int
 }
 
 type Lexer interface {
 	Next() lexer.Token
+	ShouldInsertBefore(bool, []lexer.TokenType)
+	ShouldInsertAfter(bool, []lexer.TokenType)
+}
+
+func (p *parser) shouldInsertDelimAfter(status bool, ttypes ...lexer.TokenType) {
+	p.shouldInsertAfter = status
+	p.afterToksToCheck = ttypes
+	p.l.ShouldInsertAfter(status, ttypes)
+}
+
+func (p *parser) shouldInsertDelimBefore(status bool, ttypes ...lexer.TokenType) {
+	p.shouldInsertBefore = status
+	p.beforeToksToCheck = ttypes
+	p.l.ShouldInsertBefore(status, ttypes)
 }
 
 func (p *parser) trace(msg string) func() {
@@ -216,53 +234,18 @@ func (p *parser) parseFun() Node {
 			fun.Name = &Ident{Name: p.tok}
 			p.next()
 		}
-
 	}
 	fun.Signature = p.parseFunctionSignature()
-	if p.tok.Type != lexer.Equals {
-		panic("expected = after function signature")
+	if p.tok.Type == lexer.StatementTerminator && p.peek().Type == lexer.LeftBrace {
+		p.next()
+	} else if p.tok.Type == lexer.Equals {
+		fun.Equals = p.tok
+		p.next()
+	} else {
+		panic("expected = or { after function signature")
 	}
-	fun.Equals = p.tok
-	p.next()
 	fun.Body = p.parseExpr()
 	return fun
-}
-
-// Arg = "(" { Param "," } [ Param ] ")"
-// Param = Ident [ ":" TypeBody ]
-func (p *parser) parseArg() Node {
-	defer p.trace("parseArg")()
-	var tuple Tuple
-	tuple.LeftParen = p.tok
-	p.next()
-	for p.tok.Type != lexer.RightParen && p.tok.Type != lexer.EOF {
-		var elem TupleElement
-		if p.tok.Type != lexer.Ident {
-			panic("expected ident in function parameters")
-		}
-		if p.peek().Type == lexer.Colon {
-			namedElem := TupleParam{Name: Ident{Name: p.tok}}
-			p.next()
-			namedElem.Colon = p.tok
-			p.next()
-			namedElem.Type = p.parseTypeBody(false)
-			elem.X = namedElem
-		} else {
-			elem.X = Ident{Name: p.tok}
-			p.next()
-		}
-		if p.tok.Type == lexer.Comma {
-			elem.Comma = p.tok
-			p.next()
-		}
-		tuple.Elements = append(tuple.Elements, elem)
-	}
-	if p.tok.Type != lexer.RightParen {
-		panic("expected ) in function parameters")
-	}
-	tuple.RightParen = p.tok
-	p.next()
-	return tuple
 }
 
 func (p *parser) parseOperand() Node {
@@ -275,7 +258,7 @@ func (p *parser) parseOperand() Node {
 	case lexer.LeftParen:
 		return p.parseTuple()
 	case lexer.LeftBracket:
-		panic("parseArray")
+		panic("TODO: parseArray")
 	case lexer.LeftBrace:
 		p.next()
 		block := p.parseBody(lexer.RightBrace)
@@ -295,7 +278,9 @@ func (p *parser) parseOperand() Node {
 	case lexer.StringBeg, lexer.String:
 		return p.parseString()
 	}
-	return Illegal{span: p.tok.Span, Msg: "expected operand"}
+	res := Illegal{span: p.tok.Span, Msg: "expected operand"}
+	p.next()
+	return res
 }
 
 func (p *parser) parseString() Node {
@@ -492,6 +477,9 @@ func (p *parser) parseDestructure() Node {
 // TupleDestructure = "(" Destructure "," Destructure ")"
 func (p *parser) parseTupleDestructure() Node {
 	defer p.trace("parseTupleDestructure")()
+	shouldInsert := p.shouldInsertAfter
+	toksToCheck := p.afterToksToCheck
+	p.shouldInsertDelimAfter(false)
 	leftParen := p.tok
 	p.next()
 	var elems []Node
@@ -510,6 +498,7 @@ func (p *parser) parseTupleDestructure() Node {
 		panic("missing right paren")
 	}
 	rightParen := p.tok
+	p.shouldInsertDelimAfter(shouldInsert, toksToCheck...)
 	p.next()
 	return Tuple{
 		LeftParen:  leftParen,
@@ -530,6 +519,9 @@ func (p *parser) parseIf() Node {
 		panic("missing left paren")
 	}
 	ifHeader.Cond = p.parseTuple()
+	if p.tok.Type == lexer.StatementTerminator {
+		p.next()
+	}
 	if p.tok.Type == lexer.Or {
 		cases := p.parseIfMatch()
 		return IfMatch{
@@ -578,10 +570,19 @@ func (p *parser) parseCase() Node {
 	}
 	patCase.Arrow = p.tok
 	p.next()
+	p.shouldInsertDelimAfter(true, lexer.Or)
 	patCase.Expr = p.parseExpr()
+	p.shouldInsertDelimAfter(false)
+	p.shouldInsertDelimBefore(true, lexer.Comma)
 	if p.tok.Type == lexer.Comma {
 		patCase.Comma = p.tok
 		p.next()
+	}
+	p.shouldInsertDelimBefore(false)
+	if p.tok.Type == lexer.StatementTerminator {
+		if p.peek().Type == lexer.Or {
+			p.next()
+		}
 	}
 	return patCase
 }
@@ -652,6 +653,9 @@ func (p *parser) parsePattern() Node {
 
 func (p *parser) parseTuplePattern() Node {
 	defer p.trace("parseTuplePattern")()
+	shouldInsert := p.shouldInsertAfter
+	toksToCheck := p.afterToksToCheck
+	p.shouldInsertDelimAfter(false)
 	var tuple Tuple
 	tuple.LeftParen = p.tok
 	p.next()
@@ -678,12 +682,16 @@ func (p *parser) parseTuplePattern() Node {
 		panic("missing right paren")
 	}
 	tuple.RightParen = p.tok
+	p.shouldInsertDelimAfter(shouldInsert, toksToCheck...)
 	p.next()
 	return tuple
 }
 
 func (p *parser) parseTuple() Node {
 	defer p.trace("parseTuple")()
+	shouldInsert := p.shouldInsertAfter
+	toksToCheck := p.afterToksToCheck
+	p.shouldInsertDelimAfter(false)
 	var tuple Tuple
 	tuple.LeftParen = p.tok
 	p.next()
@@ -694,12 +702,16 @@ func (p *parser) parseTuple() Node {
 			elem.Comma = p.tok
 			p.next()
 		}
+		if p.tok.Type == lexer.StatementTerminator {
+			p.next()
+		}
 		tuple.Elements = append(tuple.Elements, elem)
 	}
 	if p.tok.Type != lexer.RightParen {
 		panic("missing right paren")
 	}
 	tuple.RightParen = p.tok
+	p.shouldInsertDelimAfter(shouldInsert, toksToCheck...)
 	p.next()
 	return tuple
 }
@@ -801,6 +813,9 @@ func (p *parser) parseTypeParameter(topLevel bool) Node {
 
 func (p *parser) parseTupleTypeParameter() Node {
 	defer p.trace("parseTupleTypeParameter")()
+	shouldInsert := p.shouldInsertAfter
+	toksToCheck := p.afterToksToCheck
+	p.shouldInsertDelimAfter(false)
 	var tuple Tuple
 	tuple.LeftParen = p.tok
 	p.next()
@@ -817,6 +832,7 @@ func (p *parser) parseTupleTypeParameter() Node {
 		panic("missing right paren")
 	}
 	tuple.RightParen = p.tok
+	p.shouldInsertDelimAfter(shouldInsert, toksToCheck...)
 	p.next()
 	return tuple
 }
@@ -967,11 +983,15 @@ func (p *parser) parseSumType() Node {
 // "=" is for default values.
 func (p *parser) parseTupleType() Node {
 	defer p.trace("parseTupleType")()
+	shouldInsert := p.shouldInsertAfter
+	toksToCheck := p.afterToksToCheck
+	p.shouldInsertDelimAfter(false)
 	lpar := p.tok
 	p.next()
 	var elems []Node
 	for p.tok.Type != lexer.RightParen && p.tok.Type != lexer.EOF {
 		var elem TupleElement
+		p.shouldInsertDelimAfter(true, lexer.Fun, lexer.SingleQuote)
 		switch p.tok.Type {
 		case lexer.Ident:
 			// Could be a field name or a named type.
@@ -995,8 +1015,12 @@ func (p *parser) parseTupleType() Node {
 		default:
 			elem.X = p.parseTypeBody(false)
 		}
+		p.shouldInsertDelimAfter(false)
 		if p.tok.Type == lexer.Comma {
 			elem.Comma = p.tok
+			p.next()
+		}
+		if p.tok.Type == lexer.StatementTerminator {
 			p.next()
 		}
 		elems = append(elems, elem)
@@ -1005,6 +1029,7 @@ func (p *parser) parseTupleType() Node {
 		panic("missing right paren")
 	}
 	rpar := p.tok
+	p.shouldInsertDelimAfter(shouldInsert, toksToCheck...)
 	p.next()
 	return Tuple{
 		LeftParen:  lpar,
@@ -1042,7 +1067,7 @@ func (p *parser) parseExprOrStmt() Node {
 		return p.parseTypeDecl()
 	case lexer.If:
 		return p.parseIf()
-	case lexer.Semicolon:
+	case lexer.Semicolon, lexer.StatementTerminator:
 		return EmptyExpr{}
 	default:
 		return p.parseExpr()
@@ -1051,10 +1076,13 @@ func (p *parser) parseExprOrStmt() Node {
 
 func (p *parser) parseBody(until lexer.TokenType) Block {
 	defer p.trace("parseBody")()
+	shouldInsert := p.shouldInsertAfter
+	toksToCheck := p.afterToksToCheck
+	p.shouldInsertDelimAfter(false)
 	var body []Node
 	for p.tok.Type != until && p.tok.Type != lexer.EOF {
 		n := p.parseExprOrStmt()
-		if p.tok.Type == lexer.Semicolon {
+		if p.tok.Type == lexer.Semicolon || p.tok.Type == lexer.StatementTerminator {
 			n = Stmt{
 				Stmt:      n,
 				Semicolon: p.tok,
@@ -1063,5 +1091,6 @@ func (p *parser) parseBody(until lexer.TokenType) Block {
 		}
 		body = append(body, n)
 	}
+	p.shouldInsertDelimAfter(shouldInsert, toksToCheck...)
 	return Block{Body: body}
 }

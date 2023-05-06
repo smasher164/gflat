@@ -11,6 +11,7 @@ type TokenType int
 
 const (
 	EOF TokenType = iota
+	StatementTerminator
 	Plus
 	Minus
 	Times
@@ -359,3 +360,41 @@ func (a Token) BinaryInteroperable(b Token) bool {
 	}
 	return true
 }
+
+func (a Token) OnDifferentLines(b Token) bool {
+	return a.Span.End.Line != b.Span.Start.Line
+}
+
+func (t Token) IsBeforeSemicolon(shouldInsert bool, toksToCheck []TokenType) bool {
+	switch t.Type {
+	case RightParen, RightBrace, RightBracket, Ident, Number, String, StringEnd:
+		return true
+	}
+	// comma
+	if shouldInsert && slices.Contains(toksToCheck, t.Type) {
+		return true
+	}
+	return false
+}
+
+func (t Token) IsAfterSemicolon(shouldInsert bool, toksToCheck []TokenType) bool {
+	switch t.Type {
+	case LeftParen, LeftBrace, LeftBracket, Ident, Number, String, StringBeg:
+		return true
+	}
+	// Or, Fun, SingleQuote
+	if shouldInsert && slices.Contains(toksToCheck, t.Type) {
+		return true
+	}
+	return false
+}
+
+// func (a Token) NeedsSemicolon(t Token) bool {
+// 	if a.IsBeforeSemicolon() && t.IsAfterSemicolon() {
+// 		return true
+// 	}
+// 	if a.Type == Comma && t.Type == Or {
+// 		return true
+// 	}
+// 	return false
+// }
