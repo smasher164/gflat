@@ -308,8 +308,8 @@ func (t Token) IsRightAssoc() bool {
 	return false
 }
 
-func (t Token) BeginsPrefixExprExceptBinary() bool {
-	if t.IsPrefixOp() && !t.IsBinaryOp() {
+func (t Token) BeginsPrefixExpr() bool {
+	if t.IsPrefixOp() {
 		return true
 	}
 	switch t.Type {
@@ -317,6 +317,10 @@ func (t Token) BeginsPrefixExprExceptBinary() bool {
 		return true
 	}
 	return false
+}
+
+func (t Token) BeginsPrefixExprExceptBinary() bool {
+	return t.BeginsPrefixExpr() && !t.IsBinaryOp()
 }
 
 // func (t Token) BinaryCategory() int {

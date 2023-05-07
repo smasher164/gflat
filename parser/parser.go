@@ -352,7 +352,7 @@ func (p *parser) parsePrimaryExpr() Node {
 	switch op := p.tok; {
 	case op.IsPostfixOp():
 		// if it's DotDot and the next token is the start of an expression, just return the x
-		if op.Type == lexer.DotDot && p.peek().BeginsPrefixExprExceptBinary() {
+		if op.Type == lexer.DotDot && p.peek().BeginsPrefixExpr() {
 			return x
 		}
 		p.next()
