@@ -145,10 +145,10 @@ var Keywords = map[string]TokenType{
 	"case":    Case,
 	"match":   Match,
 	"package": Package,
-	"iso":     Iso,
-	"ref":     Ref,
-	"mut":     Mut,
-	"pub":     Pub,
+	"iso":     Iso, // TODO: are
+	"ref":     Ref, // we
+	"mut":     Mut, // doing
+	"pub":     Pub, // these?
 }
 
 type Pos struct {
