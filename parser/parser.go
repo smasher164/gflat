@@ -120,6 +120,13 @@ func (p *parser) peek() lexer.Token {
 	return p.buf[0]
 }
 
+func (p *parser) peek2() lexer.Token {
+	if len(p.buf) < 2 {
+		p.buf = append(p.buf, p.l.Next())
+	}
+	return p.buf[1]
+}
+
 func (p *parser) parseFile() (f File) {
 	defer p.trace("parseFile")()
 	p.next()
@@ -151,7 +158,7 @@ func (p *parser) parseLetDecl() Node {
 		switch p.peek().Type {
 		case lexer.Ident, lexer.LeftParen:
 			var letFun LetFunction
-			letFun.Name = &Ident{Name: p.tok}
+			letFun.Name = Ident{Name: p.tok}
 			p.next()
 			letFun.Signature = p.parseFunctionSignature()
 			if p.tok.Type == lexer.LineTerminator && p.peek().Type == lexer.LeftBrace {
@@ -258,7 +265,7 @@ func (p *parser) parseFun() Node {
 	if p.tok.Type == lexer.Ident {
 		switch p.peek().Type {
 		case lexer.Ident, lexer.LeftParen:
-			fun.Name = &Ident{Name: p.tok}
+			fun.Name = Ident{Name: p.tok}
 			p.next()
 		}
 	}
@@ -761,6 +768,36 @@ func (p *parser) parseTuple() Node {
 	return tuple
 }
 
+func (p *parser) parseIdentTuple() Node {
+	defer p.trace("parseIdentTuple")()
+	shouldInsert := p.shouldInsertAfter
+	toksToCheck := p.afterToksToCheck
+	p.shouldInsertDelimAfter(false)
+	var tuple Tuple
+	tuple.LeftParen = p.tok
+	p.next()
+	for p.tok.Type != lexer.RightParen && p.tok.Type != lexer.EOF {
+		var elem TupleElement
+		if p.tok.Type != lexer.Ident {
+			panic("expected identifier")
+		}
+		elem.X = Ident{Name: p.tok}
+		p.next()
+		if p.tok.Type == lexer.Comma {
+			elem.Comma = p.tok
+			p.next()
+		}
+		tuple.Elements = append(tuple.Elements, elem)
+	}
+	if p.tok.Type != lexer.RightParen {
+		panic("missing right paren")
+	}
+	tuple.RightParen = p.tok
+	p.shouldInsertDelimAfter(shouldInsert, toksToCheck...)
+	p.next()
+	return tuple
+}
+
 // func (p *parser) parseIfMatch() []IfMatchCase {
 // 	var cases []IfMatchCase
 // 	for p.tok.Type == lexer.Or {
@@ -1099,11 +1136,115 @@ func (p *parser) parseFunctionType() Node {
 	return fun
 }
 
+func (p *parser) parseImportDeclPackage() Node {
+	defer p.trace("parseImportDeclPackage")()
+	switch p.tok.Type {
+	case lexer.String:
+		path := p.parseString()
+		return ImportDeclPackage{Path: path}
+	case lexer.Ident:
+		alias := p.tok
+		p.next()
+		if p.tok.Type != lexer.Equals {
+			panic("missing equals")
+		}
+		equals := p.tok
+		p.next()
+		if p.tok.Type != lexer.String {
+			panic("missing string")
+		}
+		path := p.parseString()
+		return ImportDeclPackage{
+			Binding: Ident{Name: alias},
+			Equals:  equals,
+			Path:    path,
+		}
+	case lexer.LeftParen:
+		// tuple of identifiers
+		tup := p.parseIdentTuple()
+		if p.tok.Type != lexer.Equals {
+			panic("missing equals")
+		}
+		equals := p.tok
+		p.next()
+		if p.tok.Type != lexer.String {
+			panic("missing string")
+		}
+		path := p.parseString()
+		return ImportDeclPackage{
+			Binding: tup,
+			Equals:  equals,
+			Path:    path,
+		}
+	}
+	fmt.Println(p.tok)
+	panic("invalid import declaration")
+}
+
+func (p *parser) parseImportDeclBlock() Node {
+	// essentially a tuple of import declarations
+	defer p.trace("parseImportDeclBlock")()
+	shouldInsert := p.shouldInsertAfter
+	toksToCheck := p.afterToksToCheck
+	p.shouldInsertDelimAfter(false)
+	var tuple Tuple
+	tuple.LeftParen = p.tok
+	p.next()
+	for p.tok.Type != lexer.RightParen && p.tok.Type != lexer.EOF {
+		var elem TupleElement
+		elem.X = p.parseImportDeclPackage()
+		if p.tok.Type == lexer.Comma {
+			elem.Comma = p.tok
+			p.next()
+		}
+		if p.tok.Type == lexer.LineTerminator {
+			p.next()
+		}
+		tuple.Elements = append(tuple.Elements, elem)
+	}
+	if p.tok.Type != lexer.RightParen {
+		panic("missing right paren")
+	}
+	tuple.RightParen = p.tok
+	p.shouldInsertDelimAfter(shouldInsert, toksToCheck...)
+	p.next()
+	return tuple
+}
+
+func (p *parser) parseImportDecl() Node {
+	// import "github.com/someone/math"
+	// import alias = "github.com/someone/math"
+	// import Sqrt, Abs from "github.com/someone/math"
+	// import (
+	// 	"github.com/someone/math"
+	// 	alias = "github.com/someone/math"
+	// 	Sqrt, Abs from "github.com/someone/math"
+	// )
+	defer p.trace("parseImportDecl")()
+	var importDecl ImportDecl
+	importDecl.Import = p.tok
+	p.next()
+	if p.tok.Type == lexer.LeftParen {
+		switch p.peek().Type {
+		case lexer.Ident:
+			switch p.peek2().Type {
+			case lexer.Comma, lexer.RightParen:
+				importDecl.Package = p.parseImportDeclPackage()
+				return importDecl
+			}
+		}
+		importDecl.Package = p.parseImportDeclBlock()
+		return importDecl
+	}
+	importDecl.Package = p.parseImportDeclPackage()
+	return importDecl
+}
+
 func (p *parser) parseExprOrStmt() Node {
 	defer p.trace("parseExprOrStmt")()
 	switch p.tok.Type {
-	// case lexer.Import:
-	// 	return p.parseImportDecl()
+	case lexer.Import:
+		return p.parseImportDecl()
 	case lexer.Let:
 		return p.parseLetDecl()
 	case lexer.Var:

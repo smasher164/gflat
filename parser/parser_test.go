@@ -92,8 +92,15 @@ func Test(t *testing.T) {
 			// Data: []byte(`
 			// ("a" = 2)["a"]
 			// `),
+			// Data: []byte(`
+			// 1..
+			// `),
 			Data: []byte(`
-			1..
+			import (
+				"github.com/someone/math"
+				alias = "github.com/someone/math"
+				(Sqrt, Abs) = "github.com/someone/math"
+			)
 			`),
 		}})
 	if err != nil {

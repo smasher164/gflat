@@ -423,7 +423,7 @@ func (n Arrow) ASTString(depth int) string {
 
 type LetFunction struct {
 	Let       lexer.Token
-	Name      *Ident
+	Name      Node
 	Signature FunctionSignature
 	Equals    lexer.Token
 	Body      Node
@@ -451,7 +451,7 @@ func (f LetFunction) ASTString(depth int) string {
 
 type Function struct {
 	Fun       lexer.Token
-	Name      *Ident
+	Name      Node
 	Signature FunctionSignature
 	Equals    lexer.Token
 	Body      Node
@@ -993,6 +993,9 @@ func (s String) Span() lexer.Span {
 }
 
 func (s String) ASTString(depth int) string {
+	if len(s.Parts) == 1 {
+		return fmt.Sprintf("String: %s", s.Parts[0].(StringPart).Lit)
+	}
 	return fmt.Sprintf("String\n%sParts: %s", indent(depth+1), printNodeSlice(depth+1, s.Parts))
 }
 
@@ -1038,4 +1041,48 @@ func (i IndexExpr) Span() lexer.Span {
 
 func (i IndexExpr) ASTString(depth int) string {
 	return fmt.Sprintf("IndexExpr\n%sLeftBracket: %s\n%sX: %s\n%sIndex: %s\n%sRightBracket: %s", indent(depth+1), i.LeftBracket, indent(depth+1), i.X.ASTString(depth+1), indent(depth+1), i.Index.ASTString(depth+1), indent(depth+1), i.RightBracket)
+}
+
+type ImportDecl struct {
+	Import  lexer.Token
+	Package Node
+}
+
+func (i ImportDecl) LeadingTrivia() []lexer.Token {
+	return i.Import.LeadingTrivia
+}
+
+func (i ImportDecl) Span() lexer.Span {
+	return i.Import.Span.Add(spanOf(i.Package))
+}
+
+func (i ImportDecl) ASTString(depth int) string {
+	return fmt.Sprintf("ImportDecl\n%sImport: %s\n%sPackage: %s", indent(depth+1), i.Import, indent(depth+1), i.Package.ASTString(depth+1))
+}
+
+type ImportDeclPackage struct {
+	Binding Node
+	Equals  lexer.Token
+	Path    Node
+}
+
+func (i ImportDeclPackage) LeadingTrivia() []lexer.Token {
+	if i.Binding != nil {
+		return leadingTriviaOf(i.Binding)
+	}
+	return leadingTriviaOf(i.Path)
+}
+
+func (i ImportDeclPackage) Span() lexer.Span {
+	if i.Binding != nil {
+		return spanOf(i.Binding).Add(i.Equals.Span).Add(spanOf(i.Path))
+	}
+	return spanOf(i.Path)
+}
+
+func (i ImportDeclPackage) ASTString(depth int) string {
+	if i.Binding != nil {
+		return fmt.Sprintf("ImportDeclPackage\n%sBinding: %s\n%sEquals: %s\n%sPath: %s", indent(depth+1), i.Binding.ASTString(depth+1), indent(depth+1), i.Equals, indent(depth+1), i.Path.ASTString(depth+1))
+	}
+	return fmt.Sprintf("ImportDeclPackage\n%sPath: %s", indent(depth+1), i.Path.ASTString(depth+1))
 }
