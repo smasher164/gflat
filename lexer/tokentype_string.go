@@ -9,7 +9,7 @@ func _() {
 	// Re-run the stringer command to generate them again.
 	var x [1]struct{}
 	_ = x[EOF-0]
-	_ = x[StatementTerminator-1]
+	_ = x[LineTerminator-1]
 	_ = x[Plus-2]
 	_ = x[Minus-3]
 	_ = x[Times-4]
@@ -77,9 +77,9 @@ func _() {
 	_ = x[Illegal-66]
 }
 
-const _TokenType_name = "EOFStatementTerminatorPlusMinusTimesDivideRemainderAndOrCaretTildeBacktickSingleQuoteLessThanGreaterThanEqualsColonNotCommaPeriodSemicolonLeftParenRightParenLeftBraceRightBraceLeftBracketRightBracketDollarSignQuestionMarkLogicalAndLogicalOrLeftShiftRightShiftLogicalEqualsFatArrowNotEqualsLessThanEqualsGreaterThanEqualsColonEqualsExponentiationDotDotLeftArrowRightArrowFunTypeTraitImportLetVarIfElseCaseMatchPackageIsoRefMutPubIdentNumberWhitespaceSingleLineCommentStringBegStringPartStringEndStringIllegal"
+const _TokenType_name = "EOFLineTerminatorPlusMinusTimesDivideRemainderAndOrCaretTildeBacktickSingleQuoteLessThanGreaterThanEqualsColonNotCommaPeriodSemicolonLeftParenRightParenLeftBraceRightBraceLeftBracketRightBracketDollarSignQuestionMarkLogicalAndLogicalOrLeftShiftRightShiftLogicalEqualsFatArrowNotEqualsLessThanEqualsGreaterThanEqualsColonEqualsExponentiationDotDotLeftArrowRightArrowFunTypeTraitImportLetVarIfElseCaseMatchPackageIsoRefMutPubIdentNumberWhitespaceSingleLineCommentStringBegStringPartStringEndStringIllegal"
 
-var _TokenType_index = [...]uint16{0, 3, 22, 26, 31, 36, 42, 51, 54, 56, 61, 66, 74, 85, 93, 104, 110, 115, 118, 123, 129, 138, 147, 157, 166, 176, 187, 199, 209, 221, 231, 240, 249, 259, 272, 280, 289, 303, 320, 331, 345, 351, 360, 370, 373, 377, 382, 388, 391, 394, 396, 400, 404, 409, 416, 419, 422, 425, 428, 433, 439, 449, 466, 475, 485, 494, 500, 507}
+var _TokenType_index = [...]uint16{0, 3, 17, 21, 26, 31, 37, 46, 49, 51, 56, 61, 69, 80, 88, 99, 105, 110, 113, 118, 124, 133, 142, 152, 161, 171, 182, 194, 204, 216, 226, 235, 244, 254, 267, 275, 284, 298, 315, 326, 340, 346, 355, 365, 368, 372, 377, 383, 386, 389, 391, 395, 399, 404, 411, 414, 417, 420, 423, 428, 434, 444, 461, 470, 480, 489, 495, 502}
 
 func (i TokenType) String() string {
 	if i < 0 || i >= TokenType(len(_TokenType_index)-1) {

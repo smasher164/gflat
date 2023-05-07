@@ -421,6 +421,34 @@ func (n Arrow) ASTString(depth int) string {
 		n.Type.ASTString(depth+1))
 }
 
+type LetFunction struct {
+	Let       lexer.Token
+	Name      *Ident
+	Signature FunctionSignature
+	Equals    lexer.Token
+	Body      Node
+}
+
+func (f LetFunction) LeadingTrivia() []lexer.Token {
+	return f.Let.LeadingTrivia
+}
+
+func (f LetFunction) Span() lexer.Span {
+	return f.Let.Span.Add(spanOf(f.Body))
+}
+
+func (f LetFunction) ASTString(depth int) string {
+	if f.Name != nil {
+		return fmt.Sprintf(
+			"LetFunction\n%sLet: %s\n%sName: %s\n%sSignature: %s\n%sEquals: %s\n%sBody: %s",
+			indent(depth+1), f.Let, indent(depth+1), f.Name.ASTString(depth+1), indent(depth+1), f.Signature.ASTString(depth+1), indent(depth+1), f.Equals, indent(depth+1), f.Body.ASTString(depth+1))
+	}
+	return fmt.Sprintf(
+		"LetFunction\n%sLet: %s\n%sSignature: %s\n%sEquals: %s\n%sBody: %s",
+		indent(depth+1), f.Let, indent(depth+1), f.Signature.ASTString(depth+1),
+		indent(depth+1), f.Equals, indent(depth+1), f.Body.ASTString(depth+1))
+}
+
 type Function struct {
 	Fun       lexer.Token
 	Name      *Ident
@@ -992,3 +1020,22 @@ AnnotatedDestructure{
 	Type: Ident{Name: "T"},
 }
 */
+
+type IndexExpr struct {
+	LeftBracket  lexer.Token
+	X            Node
+	Index        Node
+	RightBracket lexer.Token
+}
+
+func (i IndexExpr) LeadingTrivia() []lexer.Token {
+	return i.LeftBracket.LeadingTrivia
+}
+
+func (i IndexExpr) Span() lexer.Span {
+	return i.LeftBracket.Span.Add(i.RightBracket.Span)
+}
+
+func (i IndexExpr) ASTString(depth int) string {
+	return fmt.Sprintf("IndexExpr\n%sLeftBracket: %s\n%sX: %s\n%sIndex: %s\n%sRightBracket: %s", indent(depth+1), i.LeftBracket, indent(depth+1), i.X.ASTString(depth+1), indent(depth+1), i.Index.ASTString(depth+1), indent(depth+1), i.RightBracket)
+}

@@ -57,12 +57,12 @@ func Test(t *testing.T) {
 			// 	fun int -> int,
 			// )
 			// `),
-			Data: []byte(`
-			let x = (
-				a,
-				b,
-			)
-			`),
+			// Data: []byte(`
+			// let x = (
+			// 	a,
+			// 	b,
+			// )
+			// `),
 			// Data: []byte(`
 			// let x = if(x)
 			// 	| A -> 1,
@@ -74,6 +74,27 @@ func Test(t *testing.T) {
 			// 	| A 'a
 			// 	| B (x: 'a, y: 'b)
 			// `),
+			// Data: []byte(`
+			// let f x = {
+			// 	1
+			// }
+			// `),
+			// Data: []byte(`
+			// if (true)
+			// {
+			// 	1
+			// }
+			// `),
+			// Data: []byte(`
+			// let x = (1, 2, 3, 4)
+			// print x
+			// `),
+			// Data: []byte(`
+			// ("a" = 2)["a"]
+			// `),
+			Data: []byte(`
+			1..
+			`),
 		}})
 	if err != nil {
 		t.Fatal(err)
@@ -81,9 +102,3 @@ func Test(t *testing.T) {
 	f := parser.ParseFile(l)
 	parser.PrintAST(f)
 }
-
-// TODO: comma after last match arm
-
-// commas in match arm and tuple
-// so we need to weave in ShouldInsertDelim all throughout the parser
-// we also need to look at where we parse commas and also accept terminators

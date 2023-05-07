@@ -155,6 +155,9 @@ func (l *Lexer) lexNumber() Token {
 		digitCount += l.lexDigits(&tok, _allowed, base)
 	}
 	if l.ch == '.' {
+		if l.peek() == '.' {
+			return Token{Type: Number, Span: l.spanOf(startPos, l.pos-1), Data: l.bufString()}
+		}
 		isFloat = true
 		switch base {
 		case 2:
@@ -575,7 +578,7 @@ func (l *Lexer) Next() Token {
 	if l.prev.OnDifferentLines(t) && l.prev.IsBeforeSemicolon(l.shouldInsertBefore, l.beforeToksToCheck) && t.IsAfterSemicolon(l.shouldInsertAfter, l.afterToksToCheck) {
 		l.prev = t
 		l.emittedSemi = true
-		return Token{Type: StatementTerminator, Span: Span{Start: t.Span.Start, End: t.Span.Start}}
+		return Token{Type: LineTerminator, Span: Span{Start: t.Span.Start, End: t.Span.Start}}
 	}
 	l.prev = t
 	return t

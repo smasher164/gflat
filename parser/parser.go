@@ -142,14 +142,41 @@ func (p *parser) parseFile() (f File) {
 
 // TODO: rework LetDecl to handle function and :=
 // LetDecl = "let" RestDecl
+// TOOD: add let f x = x syntax
 func (p *parser) parseLetDecl() Node {
 	defer p.trace("parseLetDecl")()
-	decl := LetDecl{Let: p.tok}
+	letTok := p.tok
 	p.next()
-	decl.Destructure, decl.Equals, decl.Rhs = p.restDecl()
+	if p.tok.Type == lexer.Ident {
+		switch p.peek().Type {
+		case lexer.Ident, lexer.LeftParen:
+			var letFun LetFunction
+			letFun.Name = &Ident{Name: p.tok}
+			p.next()
+			letFun.Signature = p.parseFunctionSignature()
+			if p.tok.Type == lexer.LineTerminator && p.peek().Type == lexer.LeftBrace {
+				p.next()
+			} else if p.tok.Type == lexer.Equals {
+				letFun.Equals = p.tok
+				p.next()
+			} else if p.tok.Type != lexer.LeftBrace {
+				panic("expected = or { after function signature")
+			}
+			letFun.Body = p.parseExpr()
+			return letFun
+		}
+	}
+	decl := LetDecl{Let: letTok}
+	decl.Destructure = p.parseDestructure()
 	if isIllegal(decl.Destructure) {
 		return decl.Destructure
 	}
+	if p.tok.Type != lexer.Equals {
+		return Illegal{Node: decl.Destructure, Msg: "expected = after let declaration"}
+	}
+	decl.Equals = p.tok
+	p.next()
+	decl.Rhs = p.parseExpr()
 	return decl
 }
 
@@ -236,12 +263,12 @@ func (p *parser) parseFun() Node {
 		}
 	}
 	fun.Signature = p.parseFunctionSignature()
-	if p.tok.Type == lexer.StatementTerminator && p.peek().Type == lexer.LeftBrace {
+	if p.tok.Type == lexer.LineTerminator && p.peek().Type == lexer.LeftBrace {
 		p.next()
 	} else if p.tok.Type == lexer.Equals {
 		fun.Equals = p.tok
 		p.next()
-	} else {
+	} else if p.tok.Type != lexer.LeftBrace {
 		panic("expected = or { after function signature")
 	}
 	fun.Body = p.parseExpr()
@@ -257,8 +284,8 @@ func (p *parser) parseOperand() Node {
 		return p.parseIf()
 	case lexer.LeftParen:
 		return p.parseTuple()
-	case lexer.LeftBracket:
-		panic("TODO: parseArray")
+	// case lexer.LeftBracket:
+	// 	panic("TODO: parseIndex")
 	case lexer.LeftBrace:
 		p.next()
 		block := p.parseBody(lexer.RightBrace)
@@ -317,6 +344,10 @@ func (p *parser) parsePrimaryExpr() Node {
 	x := p.parseOperand()
 	switch op := p.tok; {
 	case op.IsPostfixOp():
+		// if it's DotDot and the next token is the start of an expression, just return the x
+		if op.Type == lexer.DotDot && p.peek().BeginsPrefixExprExceptBinary() {
+			return x
+		}
 		p.next()
 		return PostfixExpr{X: x, Op: op}
 	case op.Type == lexer.Period:
@@ -327,6 +358,23 @@ func (p *parser) parsePrimaryExpr() Node {
 		id := p.tok
 		p.next()
 		return SelectorExpr{X: x, Period: op, Name: Ident{Name: id}}
+	case op.Type == lexer.LeftBracket:
+		shouldInsert := p.shouldInsertAfter
+		toksToCheck := p.afterToksToCheck
+		p.shouldInsertDelimAfter(false)
+		p.next()
+		var index IndexExpr
+		i := p.parseExpr()
+		if p.tok.Type != lexer.RightBracket {
+			panic("expected ]")
+		}
+		index.LeftBracket = p.tok
+		index.X = x
+		index.Index = i
+		index.RightBracket = p.tok
+		p.shouldInsertDelimAfter(shouldInsert, toksToCheck...)
+		p.next()
+		return index
 	}
 	return x
 }
@@ -519,7 +567,7 @@ func (p *parser) parseIf() Node {
 		panic("missing left paren")
 	}
 	ifHeader.Cond = p.parseTuple()
-	if p.tok.Type == lexer.StatementTerminator {
+	if p.tok.Type == lexer.LineTerminator {
 		p.next()
 	}
 	if p.tok.Type == lexer.Or {
@@ -579,7 +627,7 @@ func (p *parser) parseCase() Node {
 		p.next()
 	}
 	p.shouldInsertDelimBefore(false)
-	if p.tok.Type == lexer.StatementTerminator {
+	if p.tok.Type == lexer.LineTerminator {
 		if p.peek().Type == lexer.Or {
 			p.next()
 		}
@@ -1017,7 +1065,7 @@ func (p *parser) parseTupleType() Node {
 			elem.Comma = p.tok
 			p.next()
 		}
-		if p.tok.Type == lexer.StatementTerminator {
+		if p.tok.Type == lexer.LineTerminator {
 			p.next()
 		}
 		elems = append(elems, elem)
@@ -1064,7 +1112,7 @@ func (p *parser) parseExprOrStmt() Node {
 		return p.parseTypeDecl()
 	case lexer.If:
 		return p.parseIf()
-	case lexer.Semicolon, lexer.StatementTerminator:
+	case lexer.Semicolon, lexer.LineTerminator:
 		return EmptyExpr{}
 	default:
 		return p.parseExpr()
@@ -1079,7 +1127,7 @@ func (p *parser) parseBody(until lexer.TokenType) Block {
 	var body []Node
 	for p.tok.Type != until && p.tok.Type != lexer.EOF {
 		n := p.parseExprOrStmt()
-		if p.tok.Type == lexer.Semicolon || p.tok.Type == lexer.StatementTerminator {
+		if p.tok.Type == lexer.Semicolon || p.tok.Type == lexer.LineTerminator {
 			n = Stmt{
 				Stmt:      n,
 				Semicolon: p.tok,
