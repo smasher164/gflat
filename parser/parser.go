@@ -240,7 +240,7 @@ func (p *parser) parseFunctionSignature() FunctionSignature {
 		if p.tok.Type == lexer.Colon {
 			param.Colon = p.tok
 			p.next()
-			param.Type = p.parseTypeBody(false)
+			param.Type = p.parseTypeBodyWithoutWhere(false, false)
 		}
 		fun.Param = param
 	} else if p.tok.Type == lexer.LeftParen {
@@ -252,8 +252,14 @@ func (p *parser) parseFunctionSignature() FunctionSignature {
 		var arrow Arrow
 		arrow.Arrow = p.tok
 		p.next()
-		arrow.Type = p.parseTypeBody(false)
+		arrow.Type = p.parseTypeBodyWithoutWhere(false, false)
 		fun.Arrows = append(fun.Arrows, arrow)
+	}
+	if p.tok.Type == lexer.Where {
+		fun.Where = p.tok
+		p.next()
+		fmt.Println("hit where!")
+		fun.Clause = p.parseTypeBody(false, true)
 	}
 	return fun
 }
@@ -399,7 +405,7 @@ func (p *parser) parsePrefixExpr() Node {
 func (p *parser) parseCallExpr() Node {
 	defer p.trace("parseCallExpr")()
 	exprs := []Node{p.parsePrefixExpr()}
-	for p.tok.BeginsPrefixExprExceptBinary() {
+	for p.tok.BeginsArgumentExpr() {
 		exprs = append(exprs, p.parsePrefixExpr())
 	}
 	if len(exprs) == 1 {
@@ -419,14 +425,67 @@ func (p *parser) parseBinaryExpr(minPrec int) Node {
 			nextMinPrec++
 		}
 		var rhs Node
-		if op.Type == lexer.Colon {
-			rhs = p.parseTypeBody(false)
-		} else {
+		switch op.Type {
+		case lexer.Colon:
+			rhs = p.parseTypeBody(false, false)
+		case lexer.Where:
+			rhs = p.parseWhereClause()
+		default:
 			rhs = p.parseBinaryExpr(nextMinPrec)
 		}
 		res = filterBinExp(BinaryExpr{Left: res, Op: op, Right: rhs})
 	}
 	return res
+}
+
+func (p *parser) parseTypeAssignment() Node {
+	defer p.trace("parseTypeAssignment")()
+	if p.tok.Type != lexer.SingleQuote {
+		panic("expected '")
+	}
+	var ta BinaryExpr
+	ta.Left = p.parseNamedTypeArgument()
+	if p.tok.Type != lexer.Equals {
+		panic("expected =")
+	}
+	ta.Op = p.tok
+	p.next()
+	ta.Right = p.parseTypeBody(false, false)
+	return ta
+}
+
+// parses the expression where clause where you can specialize types in an expression.
+// e.g. foo (2, 3) where 'a = int or foo (2, 3) where ('a = int, 'b = int)
+func (p *parser) parseWhereClause() Node {
+	defer p.trace("parseWhereClause")()
+	if p.tok.Type == lexer.SingleQuote {
+		return p.parseTypeAssignment()
+	}
+	if p.tok.Type != lexer.LeftParen {
+		panic("expected (")
+	}
+	shouldInsert := p.shouldInsertAfter
+	toksToCheck := p.afterToksToCheck
+	p.shouldInsertDelimAfter(false)
+	var tuple Tuple
+	tuple.LeftParen = p.tok
+	p.next()
+	for p.tok.Type != lexer.RightParen && p.tok.Type != lexer.EOF {
+		var elem TupleElement
+		elem.X = p.parseTypeAssignment()
+		if p.tok.Type == lexer.Comma {
+			elem.Comma = p.tok
+			p.next()
+		}
+		tuple.Elements = append(tuple.Elements, elem)
+	}
+	if p.tok.Type != lexer.RightParen {
+		panic("missing right paren")
+	}
+	tuple.RightParen = p.tok
+	p.shouldInsertDelimAfter(shouldInsert, toksToCheck...)
+	p.next()
+	return tuple
 }
 
 func getBinExp(x Node) *BinaryExpr {
@@ -518,7 +577,7 @@ func (p *parser) parseDestructure() Node {
 	if p.tok.Type == lexer.Colon {
 		colon := p.tok
 		p.next()
-		typ := p.parseTypeBody(false)
+		typ := p.parseTypeBody(false, false)
 		des = TypeAnnotation{
 			Destructure: des,
 			Colon:       colon,
@@ -687,7 +746,7 @@ func (p *parser) parsePattern() Node {
 	if p.tok.Type == lexer.Colon {
 		colon := p.tok
 		p.next()
-		typ := p.parseTypeBody(false)
+		typ := p.parseTypeBody(false, false)
 		pat = TypeAnnotation{
 			Destructure: pat,
 			Colon:       colon,
@@ -860,7 +919,7 @@ func (p *parser) parseTypeDecl() Node {
 	}
 	equals := p.tok
 	p.next()
-	typeBody := p.parseTypeBody(true)
+	typeBody := p.parseTypeBody(true, false)
 	return TypeDecl{
 		Type:       typeTok,
 		Name:       typeName,
@@ -869,6 +928,116 @@ func (p *parser) parseTypeDecl() Node {
 		Body:       typeBody,
 	}
 }
+
+// like a type parameter, but with foralls allowed, and no top-level restriction
+func (p *parser) parseTupleTypeConstraint() Node {
+	defer p.trace("parseTupleTypeConstraint")()
+	shouldInsert := p.shouldInsertAfter
+	toksToCheck := p.afterToksToCheck
+	p.shouldInsertDelimAfter(false)
+	var tuple Tuple
+	tuple.LeftParen = p.tok
+	p.next()
+	for p.tok.Type != lexer.RightParen && p.tok.Type != lexer.EOF {
+		var elem TupleElement
+		elem.X = p.parseTypeBody(false, true)
+		if p.tok.Type == lexer.Comma {
+			elem.Comma = p.tok
+			p.next()
+		}
+		tuple.Elements = append(tuple.Elements, elem)
+	}
+	if p.tok.Type != lexer.RightParen {
+		panic("missing right paren")
+	}
+	tuple.RightParen = p.tok
+	p.shouldInsertDelimAfter(shouldInsert, toksToCheck...)
+	p.next()
+	return tuple
+	//	defer p.trace("parseTupleTypeConstraint")()
+	//	shouldInsert := p.shouldInsertAfter
+	//	toksToCheck := p.afterToksToCheck
+	//	p.shouldInsertDelimAfter(false)
+	//	var tuple Tuple
+	//	if expectParen {
+	//		if p.tok.Type != lexer.LeftParen {
+	//			panic("missing left paren")
+	//		}
+	//		tuple.LeftParen = p.tok
+	//		p.next()
+	//	}
+	//	if p.tok.Type == lexer.SingleQuote {
+	//		var forall ForallType
+	//		typeArg := p.parseNamedTypeArgument()
+	//		if p.tok.Type == lexer.Period {
+	//			forall.TypeArg = typeArg
+	//			forall.Period = p.tok
+	//			p.next()
+	//			forall.Type = p.parseTupleTypeConstraint(false)
+	//			tuple.Elements = append(tuple.Elements, forall)
+	//			goto parsedBody
+	//		}
+	//		var where TupleElement
+	//		where.X = typeArg
+	//		if p.tok.Type == lexer.Comma {
+	//			where.Comma = p.tok
+	//			p.next()
+	//		}
+	//		tuple.Elements = append(tuple.Elements, where)
+	//	}
+	//	for p.tok.Type == lexer.Ident || p.tok.Type == lexer.LeftParen || p.tok.Type == lexer.SingleQuote {
+	//		var where TupleElement
+	//		switch p.tok.Type {
+	//		case lexer.LeftParen:
+	//			where.X = p.parseTupleTypeConstraint(true)
+	//		case lexer.Ident:
+	//			where.X = p.parseTypeName()
+	//		case lexer.SingleQuote:
+	//			where.X = p.parseNamedTypeArgument()
+	//		default:
+	//			panic("missing type body")
+	//		}
+	//		if p.tok.Type == lexer.Comma {
+	//			where.Comma = p.tok
+	//			p.next()
+	//		}
+	//		tuple.Elements = append(tuple.Elements, where)
+	//	}
+	//
+	// parsedBody:
+	//
+	//	p.shouldInsertDelimAfter(shouldInsert, toksToCheck...)
+	//	if expectParen {
+	//		if p.tok.Type != lexer.RightParen {
+	//			panic("missing right paren")
+	//		}
+	//		tuple.RightParen = p.tok
+	//		p.next()
+	//	}
+	//	fmt.Println(p.tok)
+	//	return tuple
+}
+
+// func (p *parser) parseTypeApplicationInConstraint(name Node) Node {
+// 	defer p.trace("parseTypeApplication")()
+// 	var namedType NamedType
+// 	if name == nil {
+// 		namedType.Name = p.parseTypeName()
+// 	} else {
+// 		namedType.Name = name
+// 	}
+// 	for p.tok.Type == lexer.LeftParen || p.tok.Type == lexer.SingleQuote || p.tok.Type == lexer.Ident {
+// 		switch p.tok.Type {
+// 		case lexer.SingleQuote:
+// 			namedType.Args = append(namedType.Args, p.parseNamedTypeArgument())
+// 		case lexer.Ident:
+// 			namedType.Args = append(namedType.Args, p.parseTypeName())
+// 		case lexer.LeftParen:
+// 			namedType.Args = append(namedType.Args, p.parseTupleTypeConstraint(true))
+// 		}
+// 	}
+// 	return namedType
+// }
 
 func (p *parser) parseTypeParameter(topLevel bool) Node {
 	defer p.trace("parseTypeParameter")()
@@ -882,12 +1051,12 @@ func (p *parser) parseTypeParameter(topLevel bool) Node {
 		if topLevel {
 			panic("cannot have trait bound at the top level")
 		} else {
-			var namedType NamedType
-			namedType.Name = p.parseTypeName()
+			var typeApp TypeApplication
+			typeApp.Elements = append(typeApp.Elements, p.parseTypeName())
 			for p.tok.Type == lexer.LeftParen || p.tok.Type == lexer.SingleQuote || p.tok.Type == lexer.Ident {
-				namedType.Args = append(namedType.Args, p.parseTypeParameter(false))
+				typeApp.Elements = append(typeApp.Elements, p.parseTypeParameter(false))
 			}
-			return namedType
+			return typeApp
 		}
 	}
 	panic("missing type parameter")
@@ -970,18 +1139,17 @@ func (p *parser) parseNamedTypeArgument() Node {
 	}
 }
 
-func (p *parser) parseTypeApplication(name Node) Node {
+func (p *parser) parseTypeApplication(name Node, parseConstraint bool) Node {
 	defer p.trace("parseTypeApplication")()
-	var namedType NamedType
+	var typeApp TypeApplication
 	if name == nil {
-		namedType.Name = p.parseTypeName()
-	} else {
-		namedType.Name = name
+		name = p.parseTypeName()
 	}
+	typeApp.Elements = append(typeApp.Elements, name)
 	for p.tok.Type == lexer.LeftParen || p.tok.Type == lexer.SingleQuote || p.tok.Type == lexer.Ident || p.tok.Type == lexer.Fun {
-		namedType.Args = append(namedType.Args, p.parseTypeBody(false))
+		typeApp.Elements = append(typeApp.Elements, p.parseTypeBody(false, parseConstraint))
 	}
-	return namedType
+	return typeApp
 }
 
 // Type Name can be a SelectorExpr or type parameter, since we could be accessing a type from another package.
@@ -1009,9 +1177,8 @@ func (p *parser) parseTypeName() Node {
 	return typeName
 }
 
-// TODO: TypeBody should have one sum case, and if it sees a |, it should parse more cases.
-func (p *parser) parseTypeBody(parseSumType bool) Node {
-	defer p.trace("parseTypeBody")()
+func (p *parser) parseTypeBodyWithoutWhere(parseSumType, parseConstraint bool) Node {
+	defer p.trace("parseTypeBodyWithoutWhere")()
 	// parse forall
 	if p.tok.Type == lexer.SingleQuote {
 		var forall ForallType
@@ -1020,26 +1187,59 @@ func (p *parser) parseTypeBody(parseSumType bool) Node {
 			forall.TypeArg = typeArg
 			forall.Period = p.tok
 			p.next()
-			forall.Type = p.parseTypeBody(parseSumType)
+			forall.Type = p.parseTypeBody(parseSumType, parseConstraint)
 			return forall
 		}
-		return p.parseTypeApplication(typeArg)
+		return p.parseTypeApplication(typeArg, parseConstraint)
 	}
 	switch p.tok.Type {
 	case lexer.LeftParen:
+		if parseConstraint {
+			ttc := p.parseTupleTypeConstraint()
+			if p.tok.Type == lexer.LeftParen || p.tok.Type == lexer.SingleQuote || p.tok.Type == lexer.Ident {
+				return p.parseTypeApplication(ttc, parseConstraint)
+			} else {
+				return ttc
+			}
+		}
 		return p.parseTupleType()
 	case lexer.Ident:
-		return p.parseTypeApplication(nil)
+		return p.parseTypeApplication(nil, parseConstraint)
 	case lexer.Fun:
+		if parseConstraint {
+			panic("function types are not allowed in type constraints")
+		}
 		return p.parseFunctionType()
 	case lexer.Or:
 		if !parseSumType {
-			panic("sum types are only allowed in type declaration")
+			panic("sum types are only allowed in type declarations")
+		}
+		if parseConstraint {
+			panic("sum types are not allowed in type constraints")
 		}
 		return p.parseSumType()
 	default:
 		panic("missing type body")
 	}
+}
+
+// TODO: TypeBody should have one sum case, and if it sees a |, it should parse more cases.
+func (p *parser) parseTypeBody(parseSumType, parseConstraint bool) Node {
+	tb := p.parseTypeBodyWithoutWhere(parseSumType, parseConstraint)
+	if p.tok.Type == lexer.Where {
+		where := p.tok
+		p.next()
+		// where clause is just a comma-delimited list of type bodies.
+		// might have to restrict it to everything but sums, tuples, and functions.
+		// typeConstraint := p.parseTupleTypeConstraint(false)
+		typeConstraint := p.parseTypeBody(false, true)
+		return Where{
+			TypeBody: tb,
+			Where:    where,
+			Clause:   typeConstraint,
+		}
+	}
+	return tb
 }
 
 func (p *parser) parseSumType() Node {
@@ -1055,7 +1255,7 @@ func (p *parser) parseSumType() Node {
 		sumElem.Name = Ident{Name: p.tok}
 		p.next()
 		if p.tok.Type == lexer.LeftParen || p.tok.Type == lexer.SingleQuote || p.tok.Type == lexer.Ident || p.tok.Type == lexer.Fun {
-			sumElem.Type = p.parseTypeBody(false)
+			sumElem.Type = p.parseTypeBody(false, false)
 		}
 		sum.Elements = append(sum.Elements, sumElem)
 	}
@@ -1084,7 +1284,7 @@ func (p *parser) parseTupleType() Node {
 				p.next()
 				field.Colon = p.tok
 				p.next()
-				field.Type = p.parseTypeBody(false)
+				field.Type = p.parseTypeBody(false, false)
 				if p.tok.Type == lexer.Equals {
 					field.Equals = p.tok
 					p.next()
@@ -1092,10 +1292,10 @@ func (p *parser) parseTupleType() Node {
 				}
 				elem.X = field
 			} else {
-				elem.X = p.parseTypeBody(false)
+				elem.X = p.parseTypeBody(false, false)
 			}
 		default:
-			elem.X = p.parseTypeBody(false)
+			elem.X = p.parseTypeBody(false, false)
 		}
 		p.shouldInsertDelimAfter(false)
 		if p.tok.Type == lexer.Comma {
@@ -1125,12 +1325,12 @@ func (p *parser) parseFunctionType() Node {
 	var fun FunctionType
 	fun.Fun = p.tok
 	p.next()
-	fun.Param = p.parseTypeBody(false)
+	fun.Param = p.parseTypeBodyWithoutWhere(false, false)
 	for p.tok.Type == lexer.RightArrow {
 		var arrow Arrow
 		arrow.Arrow = p.tok
 		p.next()
-		arrow.Type = p.parseTypeBody(false)
+		arrow.Type = p.parseTypeBodyWithoutWhere(false, false)
 		fun.Arrows = append(fun.Arrows, arrow)
 	}
 	return fun

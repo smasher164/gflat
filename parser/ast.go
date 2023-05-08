@@ -353,6 +353,8 @@ func (n TupleParam) ASTString(depth int) string {
 type FunctionSignature struct {
 	Param  Node
 	Arrows []Node
+	Where  lexer.Token
+	Clause Node
 }
 
 func (n FunctionSignature) LeadingTrivia() []lexer.Token {
@@ -360,10 +362,17 @@ func (n FunctionSignature) LeadingTrivia() []lexer.Token {
 }
 
 func (n FunctionSignature) Span() lexer.Span {
-	return spanOf(n.Param).Add(spanOf(n.Arrows))
+	return spanOf(n.Param).Add(spanOf(n.Arrows)).Add(n.Where.Span).Add(spanOf(n.Clause))
 }
 
 func (n FunctionSignature) ASTString(depth int) string {
+	if n.Where.Type == lexer.Where {
+		return fmt.Sprintf(
+			"FunctionSignature\n%sParam: %s\n%sArrows: %s\n%sWhere: %s\n%sClause: %s",
+			indent(depth+1), n.Param.ASTString(depth+1), indent(depth+1),
+			printNodeSlice(depth+1, n.Arrows), indent(depth+1),
+			n.Where, indent(depth+1), n.Clause.ASTString(depth+1))
+	}
 	return fmt.Sprintf(
 		"FunctionSignature\n%sParam: %s\n%sArrows: %s",
 		indent(depth+1),
@@ -720,6 +729,25 @@ func (n NamedTypeArgument) Span() lexer.Span {
 
 func (n NamedTypeArgument) ASTString(depth int) string {
 	return fmt.Sprintf("NamedTypeArgument\n%sSingleQuote: %s\n%sName: %s", indent(depth+1), n.SingleQuote, indent(depth+1), n.Name.ASTString(depth+1))
+}
+
+type TypeApplication struct {
+	Elements []Node
+}
+
+func (t TypeApplication) LeadingTrivia() []lexer.Token {
+	if len(t.Elements) == 0 {
+		return nil
+	}
+	return leadingTriviaOf(t.Elements[0])
+}
+
+func (t TypeApplication) Span() lexer.Span {
+	return spanOf(t.Elements)
+}
+
+func (t TypeApplication) ASTString(depth int) string {
+	return fmt.Sprintf("TypeApplication\n%sElements: %s", indent(depth+1), printNodeSlice(depth+1, t.Elements))
 }
 
 type NamedType struct {
@@ -1085,4 +1113,22 @@ func (i ImportDeclPackage) ASTString(depth int) string {
 		return fmt.Sprintf("ImportDeclPackage\n%sBinding: %s\n%sEquals: %s\n%sPath: %s", indent(depth+1), i.Binding.ASTString(depth+1), indent(depth+1), i.Equals, indent(depth+1), i.Path.ASTString(depth+1))
 	}
 	return fmt.Sprintf("ImportDeclPackage\n%sPath: %s", indent(depth+1), i.Path.ASTString(depth+1))
+}
+
+type Where struct {
+	TypeBody Node
+	Where    lexer.Token
+	Clause   Node
+}
+
+func (w Where) LeadingTrivia() []lexer.Token {
+	return leadingTriviaOf(w.TypeBody)
+}
+
+func (w Where) Span() lexer.Span {
+	return spanOf(w.TypeBody).Add(spanOf(w.Clause))
+}
+
+func (w Where) ASTString(depth int) string {
+	return fmt.Sprintf("Where\n%sTypeBody: %s\n%sWhere: %s\n%sClause: %s", indent(depth+1), w.TypeBody.ASTString(depth+1), indent(depth+1), w.Where, indent(depth+1), w.Clause.ASTString(depth+1))
 }

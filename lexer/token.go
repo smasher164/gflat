@@ -72,6 +72,7 @@ const (
 	Ref
 	Mut
 	Pub
+	Where
 
 	Ident
 	Number
@@ -149,6 +150,7 @@ var Keywords = map[string]TokenType{
 	"ref":     Ref, // we
 	"mut":     Mut, // doing
 	"pub":     Pub, // these?
+	"where":   Where,
 }
 
 type Pos struct {
@@ -230,7 +232,7 @@ func (a Token) ExactEq(b Token) bool {
 
 func (t Token) IsBinaryOp() bool {
 	switch t.Type {
-	case DotDot, Plus, Minus, Times, Divide, Remainder, LeftShift, RightShift, And, Or, Caret, LogicalAnd, LogicalOr, LogicalEquals, NotEquals, Equals, LessThan, LessThanEquals, GreaterThan, GreaterThanEquals, LeftArrow, Exponentiation, Colon:
+	case Where, DotDot, Plus, Minus, Times, Divide, Remainder, LeftShift, RightShift, And, Or, Caret, LogicalAnd, LogicalOr, LogicalEquals, NotEquals, Equals, LessThan, LessThanEquals, GreaterThan, GreaterThanEquals, LeftArrow, Exponentiation, Colon:
 		return true
 	}
 	return false
@@ -270,7 +272,7 @@ func (t Token) Prec() int {
 	// }
 	// return 0
 	switch t.Type {
-	case Colon:
+	case Colon, Where:
 		return 9
 	case Exponentiation:
 		return 8
@@ -319,7 +321,7 @@ func (t Token) BeginsPrefixExpr() bool {
 	return false
 }
 
-func (t Token) BeginsPrefixExprExceptBinary() bool {
+func (t Token) BeginsArgumentExpr() bool {
 	return t.BeginsPrefixExpr() && !t.IsBinaryOp()
 }
 

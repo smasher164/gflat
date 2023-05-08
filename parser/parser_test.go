@@ -92,9 +92,9 @@ func Test(t *testing.T) {
 			// Data: []byte(`
 			// ("a" = 2)["a"]
 			// `),
-			Data: []byte(`
-			1..-2
-			`),
+			// Data: []byte(`
+			// import sort2 = "sort"
+			// `),
 			// Data: []byte(`
 			// import (
 			// 	"github.com/someone/math"
@@ -102,6 +102,12 @@ func Test(t *testing.T) {
 			// 	(Sqrt, Abs) = "github.com/someone/math"
 			// )
 			// `),
+			// Data: []byte(`
+			// fun foo x : int -> int = x
+			// `),
+			Data: []byte(`
+			1 where ('a = List int, 'b = int)
+			`),
 		}})
 	if err != nil {
 		t.Fatal(err)
