@@ -277,11 +277,11 @@ func (p *parser) parseFun() Node {
 	fun.Signature = p.parseFunctionSignature()
 	if p.tok.Type == lexer.LineTerminator && p.peek().Type == lexer.LeftBrace {
 		p.next()
-	} else if p.tok.Type == lexer.Equals {
-		fun.Equals = p.tok
+	} else if p.tok.Type == lexer.FatArrow {
+		fun.FatArrow = p.tok
 		p.next()
 	} else if p.tok.Type != lexer.LeftBrace {
-		panic("expected = or { after function signature")
+		panic("expected => or { after function signature")
 	}
 	fun.Body = p.parseExpr()
 	return fun
@@ -689,7 +689,7 @@ func (p *parser) parseCase() Node {
 	if p.tok.Type == lexer.If {
 		patCase.Guard = p.parseGuard()
 	}
-	if p.tok.Type != lexer.RightArrow { // TODO: should we use a fat arrow here? | x : fun int -> int -> x is ambiguous.
+	if p.tok.Type != lexer.FatArrow {
 		panic("missing arrow")
 	}
 	patCase.Arrow = p.tok

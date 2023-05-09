@@ -63,12 +63,12 @@ func Test(t *testing.T) {
 			// 	b,
 			// )
 			// `),
-			// Data: []byte(`
-			// let x = if(x)
-			// 	| A -> 1,
-			// 	| B -> 2,
-			// print x
-			// `),
+			Data: []byte(`
+			let x = if(x)
+				| A => 1,
+				| x : fun int -> int => 2,
+			print x
+			`),
 			// Data: []byte(`
 			// type A =
 			// 	| A 'a
@@ -105,11 +105,11 @@ func Test(t *testing.T) {
 			// Data: []byte(`
 			// fun foo x : int -> int = x
 			// `),
-			Data: []byte(`
-			impl Eq 'a where Show 'a = (
-				Eq = fun (x, y) -> bool = x == y,
-			)
-			`),
+			// Data: []byte(`
+			// impl Eq 'a where Show 'a = (
+			// 	Eq = fun (x, y) -> bool => x == y,
+			// )
+			// `),
 		}})
 	if err != nil {
 		t.Fatal(err)

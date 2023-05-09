@@ -462,7 +462,7 @@ type Function struct {
 	Fun       lexer.Token
 	Name      Node
 	Signature FunctionSignature
-	Equals    lexer.Token
+	FatArrow  lexer.Token
 	Body      Node
 }
 
@@ -477,13 +477,13 @@ func (f Function) Span() lexer.Span {
 func (f Function) ASTString(depth int) string {
 	if f.Name != nil {
 		return fmt.Sprintf(
-			"Function\n%sFun: %s\n%sName: %s\n%sSignature: %s\n%sEquals: %s\n%sBody: %s",
-			indent(depth+1), f.Fun, indent(depth+1), f.Name.ASTString(depth+1), indent(depth+1), f.Signature.ASTString(depth+1), indent(depth+1), f.Equals, indent(depth+1), f.Body.ASTString(depth+1))
+			"Function\n%sFun: %s\n%sName: %s\n%sSignature: %s\n%sFatArrow: %s\n%sBody: %s",
+			indent(depth+1), f.Fun, indent(depth+1), f.Name.ASTString(depth+1), indent(depth+1), f.Signature.ASTString(depth+1), indent(depth+1), f.FatArrow, indent(depth+1), f.Body.ASTString(depth+1))
 	}
 	return fmt.Sprintf(
-		"Function\n%sFun: %s\n%sSignature: %s\n%sEquals: %s\n%sBody: %s",
+		"Function\n%sFun: %s\n%sSignature: %s\n%sFatArrow: %s\n%sBody: %s",
 		indent(depth+1), f.Fun, indent(depth+1), f.Signature.ASTString(depth+1),
-		indent(depth+1), f.Equals, indent(depth+1), f.Body.ASTString(depth+1))
+		indent(depth+1), f.FatArrow, indent(depth+1), f.Body.ASTString(depth+1))
 }
 
 type TupleElement struct {
