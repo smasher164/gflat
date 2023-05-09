@@ -106,7 +106,9 @@ func Test(t *testing.T) {
 			// fun foo x : int -> int = x
 			// `),
 			Data: []byte(`
-			1 where ('a = List int, 'b = int)
+			impl Eq 'a where Show 'a = (
+				Eq = fun (x, y) -> bool = x == y,
+			)
 			`),
 		}})
 	if err != nil {

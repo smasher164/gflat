@@ -73,6 +73,7 @@ const (
 	Mut
 	Pub
 	Where
+	Impl
 
 	Ident
 	Number
@@ -151,6 +152,7 @@ var Keywords = map[string]TokenType{
 	"mut":     Mut, // doing
 	"pub":     Pub, // these?
 	"where":   Where,
+	"impl":    Impl,
 }
 
 type Pos struct {

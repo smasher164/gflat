@@ -1132,3 +1132,42 @@ func (w Where) Span() lexer.Span {
 func (w Where) ASTString(depth int) string {
 	return fmt.Sprintf("Where\n%sTypeBody: %s\n%sWhere: %s\n%sClause: %s", indent(depth+1), w.TypeBody.ASTString(depth+1), indent(depth+1), w.Where, indent(depth+1), w.Clause.ASTString(depth+1))
 }
+
+type ImplDecl struct {
+	Impl   lexer.Token
+	Name   Node
+	Args   Node
+	Where  lexer.Token
+	Clause Node
+	Equals lexer.Token
+	Body   Node
+}
+
+func (i ImplDecl) LeadingTrivia() []lexer.Token {
+	return i.Impl.LeadingTrivia
+}
+
+func (i ImplDecl) Span() lexer.Span {
+	return i.Impl.Span.Add(spanOf(i.Args)).Add(spanOf(i.Clause)).Add(spanOf(i.Body))
+}
+
+func (i ImplDecl) ASTString(depth int) string {
+	// body can be nil and clause can be nil
+	// so we have the case where nothing is nil
+	// the case where body is nil
+	// the case where clause is nil
+	// the case where both are nil
+	if i.Body != nil && i.Clause != nil {
+		return fmt.Sprintf("ImplDecl\n%sImpl: %s\n%sName: %s\n%sArgs: %s\n%sWhere: %s\n%sClause: %s\n%sEquals: %s\n%sBody: %s", indent(depth+1), i.Impl, indent(depth+1), i.Name.ASTString(depth+1), indent(depth+1), i.Args.ASTString(depth+1), indent(depth+1), i.Where, indent(depth+1), i.Clause.ASTString(depth+1), indent(depth+1), i.Equals, indent(depth+1), i.Body.ASTString(depth+1))
+	}
+	if i.Body != nil {
+		// this implies that Where and Clause don't exist
+		return fmt.Sprintf("ImplDecl\n%sImpl: %s\n%sName: %s\n%sArgs: %s\n%sEquals: %s\n%sBody: %s", indent(depth+1), i.Impl, indent(depth+1), i.Name.ASTString(depth+1), indent(depth+1), i.Args.ASTString(depth+1), indent(depth+1), i.Equals, indent(depth+1), i.Body.ASTString(depth+1))
+	}
+	if i.Clause != nil {
+		// this implies that Equals and Body don't exist
+		return fmt.Sprintf("ImplDecl\n%sImpl: %s\n%sName: %s\n%sArgs: %s\n%sWhere: %s\n%sClause: %s", indent(depth+1), i.Impl, indent(depth+1), i.Name.ASTString(depth+1), indent(depth+1), i.Args.ASTString(depth+1), indent(depth+1), i.Where, indent(depth+1), i.Clause.ASTString(depth+1))
+	}
+	// this implies that Where, Clause, Equals, and Body don't exist
+	return fmt.Sprintf("ImplDecl\n%sImpl: %s\n%sName: %s\n%sArgs: %s", indent(depth+1), i.Impl, indent(depth+1), i.Name.ASTString(depth+1), indent(depth+1), i.Args.ASTString(depth+1))
+}
