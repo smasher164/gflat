@@ -698,37 +698,35 @@ func (n Number) ASTString(depth int) string {
 }
 
 type NamedTypeParameter struct {
-	SingleQuote lexer.Token
-	Name        Node
+	TypeParam lexer.Token
 }
 
 func (n NamedTypeParameter) LeadingTrivia() []lexer.Token {
-	return n.SingleQuote.LeadingTrivia
+	return n.TypeParam.LeadingTrivia
 }
 
 func (n NamedTypeParameter) Span() lexer.Span {
-	return n.SingleQuote.Span.Add(spanOf(n.Name))
+	return n.TypeParam.Span
 }
 
 func (n NamedTypeParameter) ASTString(depth int) string {
-	return fmt.Sprintf("NamedTypeParameter\n%sSingleQuote: %s\n%sName: %s", indent(depth+1), n.SingleQuote, indent(depth+1), n.Name.ASTString(depth+1))
+	return fmt.Sprintf("NamedTypeParameter %s", n.TypeParam)
 }
 
 type NamedTypeArgument struct {
-	SingleQuote lexer.Token
-	Name        Node
+	TypeArg lexer.Token
 }
 
 func (n NamedTypeArgument) LeadingTrivia() []lexer.Token {
-	return n.SingleQuote.LeadingTrivia
+	return n.TypeArg.LeadingTrivia
 }
 
 func (n NamedTypeArgument) Span() lexer.Span {
-	return n.SingleQuote.Span.Add(spanOf(n.Name))
+	return n.TypeArg.Span
 }
 
 func (n NamedTypeArgument) ASTString(depth int) string {
-	return fmt.Sprintf("NamedTypeArgument\n%sSingleQuote: %s\n%sName: %s", indent(depth+1), n.SingleQuote, indent(depth+1), n.Name.ASTString(depth+1))
+	return fmt.Sprintf("NamedTypeArgument %s", n.TypeArg)
 }
 
 type TypeApplication struct {
@@ -1170,4 +1168,26 @@ func (i ImplDecl) ASTString(depth int) string {
 	}
 	// this implies that Where, Clause, Equals, and Body don't exist
 	return fmt.Sprintf("ImplDecl\n%sImpl: %s\n%sName: %s\n%sArgs: %s", indent(depth+1), i.Impl, indent(depth+1), i.Name.ASTString(depth+1), indent(depth+1), i.Args.ASTString(depth+1))
+}
+
+type ArrayType struct {
+	LeftBracket  lexer.Token
+	Length       lexer.Token
+	RightBracket lexer.Token
+	Type         Node
+}
+
+func (a ArrayType) LeadingTrivia() []lexer.Token {
+	return a.LeftBracket.LeadingTrivia
+}
+
+func (a ArrayType) Span() lexer.Span {
+	return a.LeftBracket.Span.Add(spanOf(a.Type))
+}
+
+func (a ArrayType) ASTString(depth int) string {
+	if a.Length.Type != lexer.Number {
+		return fmt.Sprintf("ArrayType\n%sLeftBracket: %s\n%sRightBracket: %s\n%sType: %s", indent(depth+1), a.LeftBracket, indent(depth+1), a.RightBracket, indent(depth+1), a.Type.ASTString(depth+1))
+	}
+	return fmt.Sprintf("ArrayType\n%sLeftBracket: %s\n%sLength: %s\n%sRightBracket: %s\n%sType: %s", indent(depth+1), a.LeftBracket, indent(depth+1), a.Length, indent(depth+1), a.RightBracket, indent(depth+1), a.Type.ASTString(depth+1))
 }

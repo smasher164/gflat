@@ -79,7 +79,7 @@ func TestLexer(t *testing.T) {
 			got = append(got, tok)
 			if !slices.EqualFunc(got, expected, Token.ExactEq) {
 				if debug {
-					fmt.Printf("got: %v\n", got)
+					fmt.Printf(" got: %v\n\nwant: %v\n", got, expected)
 				}
 				t.Log(name)
 				pretty.Ldiff(t, expected, got)
@@ -94,7 +94,7 @@ func TestLexer(t *testing.T) {
 
 	run("empty.txt", "", []Token{single(nil, EOF, Pos{0, 1, 1})})
 
-	run("singlechar.txt", "+ % ^ ~ , ; ? ( ) [ ] ` ' / - * & | < > = ! : . $", []Token{
+	run("singlechar.txt", "+ % ^ ~ , ; ? ( ) [ ] ` / - * & | < > = ! : . $", []Token{
 		single(nil, Plus, Pos{0, 1, 1}),
 		singleWS(Pos{1, 1, 2}, Remainder, Pos{2, 1, 3}),
 		singleWS(Pos{3, 1, 4}, Caret, Pos{4, 1, 5}),
@@ -107,20 +107,19 @@ func TestLexer(t *testing.T) {
 		singleWS(Pos{17, 1, 18}, LeftBracket, Pos{18, 1, 19}),
 		singleWS(Pos{19, 1, 20}, RightBracket, Pos{20, 1, 21}),
 		singleWS(Pos{21, 1, 22}, Backtick, Pos{22, 1, 23}),
-		singleWS(Pos{23, 1, 24}, SingleQuote, Pos{24, 1, 25}),
-		singleWS(Pos{25, 1, 26}, Divide, Pos{26, 1, 27}),
-		singleWS(Pos{27, 1, 28}, Minus, Pos{28, 1, 29}),
-		singleWS(Pos{29, 1, 30}, Times, Pos{30, 1, 31}),
-		singleWS(Pos{31, 1, 32}, And, Pos{32, 1, 33}),
-		singleWS(Pos{33, 1, 34}, Or, Pos{34, 1, 35}),
-		singleWS(Pos{35, 1, 36}, LessThan, Pos{36, 1, 37}),
-		singleWS(Pos{37, 1, 38}, GreaterThan, Pos{38, 1, 39}),
-		singleWS(Pos{39, 1, 40}, Equals, Pos{40, 1, 41}),
-		singleWS(Pos{41, 1, 42}, Not, Pos{42, 1, 43}),
-		singleWS(Pos{43, 1, 44}, Colon, Pos{44, 1, 45}),
-		singleWS(Pos{45, 1, 46}, Period, Pos{46, 1, 47}),
-		singleWS(Pos{47, 1, 48}, DollarSign, Pos{48, 1, 49}),
-		single(nil, EOF, Pos{49, 1, 50}),
+		singleWS(Pos{23, 1, 24}, Divide, Pos{24, 1, 25}),
+		singleWS(Pos{25, 1, 26}, Minus, Pos{26, 1, 27}),
+		singleWS(Pos{27, 1, 28}, Times, Pos{28, 1, 29}),
+		singleWS(Pos{29, 1, 30}, And, Pos{30, 1, 31}),
+		singleWS(Pos{31, 1, 32}, Or, Pos{32, 1, 33}),
+		singleWS(Pos{33, 1, 34}, LessThan, Pos{34, 1, 35}),
+		singleWS(Pos{35, 1, 36}, GreaterThan, Pos{36, 1, 37}),
+		singleWS(Pos{37, 1, 38}, Equals, Pos{38, 1, 39}),
+		singleWS(Pos{39, 1, 40}, Not, Pos{40, 1, 41}),
+		singleWS(Pos{41, 1, 42}, Colon, Pos{42, 1, 43}),
+		singleWS(Pos{43, 1, 44}, Period, Pos{44, 1, 45}),
+		singleWS(Pos{45, 1, 46}, DollarSign, Pos{46, 1, 47}),
+		single(nil, EOF, Pos{47, 1, 48}),
 	})
 
 	run("doublechar.txt", "-> ** && || <= << <- >= >> == != := ..", []Token{

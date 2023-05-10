@@ -53,18 +53,20 @@ func isLetter(ch rune) bool {
 	return ch == '_' || xid.Start(ch)
 }
 
-func (l *Lexer) lexIdentOrKeyword() Token {
+func (l *Lexer) lexIdentOrKeyword(justIdent bool) Token {
 	startPos := l.pos
 	l.next()
 	for xid.Continue(l.ch) {
 		l.next()
 	}
 	ident := l.bufString()
-	if ttyp, ok := Keywords[ident]; ok {
-		return Token{Type: ttyp, Span: l.spanOf(startPos, l.pos-1)}
-	}
-	if l.ch == '"' {
-		return l.lexString([]rune(ident))
+	if !justIdent {
+		if ttyp, ok := Keywords[ident]; ok {
+			return Token{Type: ttyp, Span: l.spanOf(startPos, l.pos-1)}
+		}
+		if l.ch == '"' {
+			return l.lexString([]rune(ident))
+		}
 	}
 	return Token{Type: Ident, Span: l.spanOf(startPos, l.pos-1), Data: ident}
 }
@@ -500,6 +502,16 @@ func (l *Lexer) lexString(delim []rune) Token {
 	return l.lexStringPart(startPos, true)
 }
 
+func (l *Lexer) lexTypeArg() Token {
+	startPos := l.pos
+	l.next()
+	var id Token = l.lexIdentOrKeyword(true)
+	if id.Type == Illegal {
+		return Token{Type: Illegal, Span: l.spanOf(startPos, id.Span.End.Offset), Data: id.Data}
+	}
+	return Token{Type: TypeArg, Span: l.spanOf(startPos, id.Span.End.Offset), Data: id.Data}
+}
+
 func (l *Lexer) NextToken() Token {
 	defer l.resetPos()
 	startPos := l.pos
@@ -513,9 +525,11 @@ func (l *Lexer) NextToken() Token {
 	case unicode.IsSpace(l.ch):
 		return l.lexWS()
 	case isLetter(l.ch):
-		return l.lexIdentOrKeyword()
+		return l.lexIdentOrKeyword(false)
 	case isDecimal(l.ch) || l.ch == '.' && isDecimal(l.peek()):
 		return l.lexNumber()
+	case l.ch == '\'':
+		return l.lexTypeArg()
 	case l.ch == '#':
 		return l.lexLineComment()
 	// TODO: do we need multiline (nested) comments?

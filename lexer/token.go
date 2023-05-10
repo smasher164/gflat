@@ -23,7 +23,7 @@ const (
 	Caret
 	Tilde
 	Backtick
-	SingleQuote
+	// SingleQuote
 	LessThan
 	GreaterThan
 
@@ -77,6 +77,7 @@ const (
 
 	Ident
 	Number
+	TypeArg
 	Whitespace
 	SingleLineComment
 	// MultilineComment
@@ -99,23 +100,23 @@ var SingleCharTokens = map[rune]TokenType{
 	'(': LeftParen,
 	')': RightParen,
 	// '{':  LeftBrace,
-	'[':  LeftBracket,
-	']':  RightBracket,
-	'`':  Backtick,
-	'\'': SingleQuote,
-	'/':  Divide,
-	'-':  Minus,
-	'*':  Times,
-	'&':  And,
-	'|':  Or,
-	'<':  LessThan,
-	'>':  GreaterThan,
-	'=':  Equals,
-	'!':  Not,
-	':':  Colon,
-	'.':  Period,
-	'$':  DollarSign,
-	eof:  EOF,
+	'[': LeftBracket,
+	']': RightBracket,
+	'`': Backtick,
+	// '\'': SingleQuote,
+	'/': Divide,
+	'-': Minus,
+	'*': Times,
+	'&': And,
+	'|': Or,
+	'<': LessThan,
+	'>': GreaterThan,
+	'=': Equals,
+	'!': Not,
+	':': Colon,
+	'.': Period,
+	'$': DollarSign,
+	eof: EOF,
 }
 
 var DoubleCharTokens = map[[2]rune]TokenType{
