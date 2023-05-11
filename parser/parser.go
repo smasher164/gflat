@@ -100,7 +100,7 @@ func (p *parser) trace(msg string) func() {
 // 	return f
 // }
 
-func ParseFile(l Lexer) File {
+func ParseFile(l Lexer) Node {
 	return (&parser{l: l}).parseFile()
 }
 
@@ -131,14 +131,18 @@ func (p *parser) parseFile() (f File) {
 	defer p.trace("parseFile")()
 	p.next()
 	if p.tok.Type == lexer.Package {
-		f.PackageDecl = &PackageDecl{Package: p.tok}
+		f.Package = p.tok
 		p.next()
 		if p.tok.Type == lexer.Ident {
-			f.PackageDecl.Name = Ident{Name: p.tok}
+			f.PackageName = Ident{Name: p.tok}
 		} else {
 			// do I need to give it a span?
-			f.PackageDecl.Name = Illegal{Msg: "expected identifier after package"}
+			f.PackageName = Illegal{Msg: "expected identifier after package"}
 		}
+		p.next()
+	}
+	if p.tok.Type == lexer.LineTerminator {
+		p.next()
 	}
 	f.Body = p.parseBody(lexer.EOF)
 	if p.tok.Type == lexer.EOF {
@@ -646,12 +650,8 @@ func (p *parser) parseIf() Node {
 	if p.tok.Type == lexer.LineTerminator {
 		p.next()
 	}
-	if p.tok.Type == lexer.Or {
-		cases := p.parseIfMatch()
-		return IfMatch{
-			IfHeader: ifHeader,
-			Cases:    cases,
-		}
+	if p.tok.Type == lexer.Or || (p.tok.Type == lexer.LeftBrace && p.peek().Type == lexer.Or) {
+		return p.parseIfMatch(ifHeader)
 	}
 	body := p.parseExpr()
 	if p.tok.Type == lexer.Else {
@@ -671,16 +671,33 @@ func (p *parser) parseIf() Node {
 	}
 }
 
-func (p *parser) parseIfMatch() []Node {
+func (p *parser) parseIfMatch(ifHeader IfHeader) Node {
 	defer p.trace("parseIfMatch")()
+	var ifMatch IfMatch
+	var setRbrace bool
+	if p.tok.Type == lexer.LeftBrace {
+		ifMatch.LeftBrace = p.tok
+		setRbrace = true
+		p.next()
+	}
 	var cases []Node
 	for p.tok.Type == lexer.Or {
-		cases = append(cases, p.parseCase())
+		c := p.parseCase(&ifMatch, setRbrace)
+		cases = append(cases, c)
+		if ifMatch.RightBrace.Type == lexer.RightBrace {
+			break
+		}
 	}
-	return cases
+	// if p.tok.Type == lexer.RightBrace {
+	// 	ifMatch.RightBrace = p.tok
+	// 	p.next()
+	// }
+	ifMatch.IfHeader = ifHeader
+	ifMatch.Cases = cases
+	return ifMatch
 }
 
-func (p *parser) parseCase() Node {
+func (p *parser) parseCase(ifMatch *IfMatch, setRbrace bool) Node {
 	defer p.trace("parseCase")()
 	var patCase PatternCase
 	patCase.Or = p.tok
@@ -696,14 +713,20 @@ func (p *parser) parseCase() Node {
 	p.next()
 	p.shouldInsertDelimAfter(true, lexer.Or)
 	patCase.Expr = p.parseExpr()
-	p.shouldInsertDelimAfter(false)
+	// right brace should be checked here.
+	if setRbrace && p.tok.Type == lexer.RightBrace {
+		ifMatch.RightBrace = p.tok
+		p.next()
+	}
 	p.shouldInsertDelimBefore(true, lexer.Comma)
 	if p.tok.Type == lexer.Comma {
+		// fmt.Println("comma") // insert line terminator after?
 		patCase.Comma = p.tok
 		p.next()
 	}
+	p.shouldInsertDelimAfter(false)
 	p.shouldInsertDelimBefore(false)
-	if p.tok.Type == lexer.LineTerminator {
+	if p.tok.Type == lexer.LineTerminator && ifMatch.RightBrace.Type != lexer.RightBrace {
 		if p.peek().Type == lexer.Or {
 			p.next()
 		}

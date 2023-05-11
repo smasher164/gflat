@@ -105,11 +105,15 @@ func Test(t *testing.T) {
 			// Data: []byte(`
 			// let foo x : int -> int = x
 			// `),
-			Data: []byte(`
-			impl Eq []'a where Show 'a = (
-				Eq = fun (x, y) -> bool => x == y,
-			)
-			`),
+			// Data: []byte(`
+			// package main
+			// {
+
+			// }
+			// impl Eq []'a where Show 'a = (
+			// 	Eq = fun (x, y) -> bool => x == y,
+			// )
+			// `),
 			// Data: []byte(`
 			// foo where 'a = 3
 			// `),
@@ -118,6 +122,16 @@ func Test(t *testing.T) {
 			// let y = x[0]
 			// print y
 			// `),
+			Data: []byte(`
+			if (x)
+			| foo => 1
+			| bar =>
+			  if (y) {
+			   | a => 2
+			   | b => 3
+			  }
+			| baz => 4
+			`),
 		}})
 	if err != nil {
 		t.Fatal(err)

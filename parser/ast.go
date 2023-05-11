@@ -16,7 +16,6 @@ type Node interface {
 
 var (
 	_ Node = BinaryExpr{}
-	_ Node = &PackageDecl{}
 	_ Node = Stmt{}
 	_ Node = File{}
 	_ Node = Ident{}
@@ -25,6 +24,10 @@ var (
 	_ Node = EmptyExpr{}
 	_ Node = TypeAnnotation{}
 	_ Node = TupleParam{}
+	_ Node = FunctionSignature{}
+	_ Node = Param{}
+	_ Node = Arrow{}
+	_ Node = LetFunction{}
 	_ Node = Function{}
 	_ Node = TupleElement{}
 	_ Node = Tuple{}
@@ -37,9 +40,11 @@ var (
 	_ Node = Number{}
 	_ Node = NamedTypeParameter{}
 	_ Node = NamedTypeArgument{}
+	_ Node = TypeApplication{}
 	_ Node = NamedType{}
 	_ Node = SumType{}
 	_ Node = SumTypeElement{}
+	_ Node = ForallType{}
 	_ Node = FunctionType{}
 	_ Node = Field{}
 	_ Node = PrefixExpr{}
@@ -50,6 +55,12 @@ var (
 	_ Node = IfMatch{}
 	_ Node = StringPart{}
 	_ Node = String{}
+	_ Node = IndexExpr{}
+	_ Node = ImportDecl{}
+	_ Node = ImportDeclPackage{}
+	_ Node = Where{}
+	_ Node = ImplDecl{}
+	_ Node = ArrayType{}
 )
 
 func spanOf(n any) lexer.Span {
@@ -100,32 +111,9 @@ func (be BinaryExpr) LeadingTrivia() []lexer.Token {
 	return leadingTriviaOf(be.Left)
 }
 
-type PackageDecl struct {
-	Package lexer.Token
-	Name    Node
-}
-
-func (p *PackageDecl) ASTString(depth int) string {
-	if p == nil {
-		return "nil"
-	}
-	return fmt.Sprintf(
-		"PackageDecl\n%sPackage: %s\n%sName: %s",
-		indent(depth+1),
-		p.Package, indent(depth+1),
-		p.Name.ASTString(depth+1))
-}
-
-func (p *PackageDecl) Span() lexer.Span {
-	return p.Package.Span.Add(spanOf(p.Name))
-}
-
-func (p *PackageDecl) LeadingTrivia() []lexer.Token {
-	return p.Package.LeadingTrivia
-}
-
 type File struct {
-	PackageDecl    *PackageDecl
+	Package        lexer.Token
+	PackageName    Node
 	Body           Node
 	trailingTrivia []lexer.Token
 }
@@ -160,24 +148,31 @@ func (s Stmt) Span() lexer.Span {
 }
 
 func (f File) ASTString(depth int) string {
+	if f.Package.Type == lexer.Package {
+		return fmt.Sprintf(
+			"%sFile\n%sPackage: %s\n%sPackageName: %s\n%sBody: %s\n%sTrailingTrivia: %v",
+			indent(depth), indent(depth+1),
+			f.Package, indent(depth+1),
+			f.PackageName.ASTString(depth+1), indent(depth+1),
+			f.Body.ASTString(depth+1), indent(depth+1),
+			f.trailingTrivia)
+	}
 	return fmt.Sprintf(
-		"%sFile\n%sPackageDecl: %s\n%sBody: %s\n%sTrailingTrivia: %v",
+		"%sFile\n%sBody: %s\n%sTrailingTrivia: %v",
 		indent(depth), indent(depth+1),
-		f.PackageDecl.ASTString(depth+1), indent(depth+1),
 		f.Body.ASTString(depth+1), indent(depth+1),
 		f.trailingTrivia)
 }
 
 func (f File) LeadingTrivia() []lexer.Token {
-	if trivia := leadingTriviaOf(f.PackageDecl); trivia != nil {
-		return trivia
-	} else {
-		return leadingTriviaOf(f.Body)
+	if f.Package.Type == lexer.Package {
+		return f.Package.LeadingTrivia
 	}
+	return leadingTriviaOf(f.Body)
 }
 
 func (f File) Span() lexer.Span {
-	return spanOf(f.PackageDecl).Add(spanOf(f.Body))
+	return spanOf(f.Package).Add(spanOf(f.Body))
 }
 
 func (f File) TrailingTrivia() []lexer.Token {
@@ -969,8 +964,10 @@ func (p PatternCase) ASTString(depth int) string {
 }
 
 type IfMatch struct {
-	IfHeader Node
-	Cases    []Node
+	IfHeader   Node
+	LeftBrace  lexer.Token
+	Cases      []Node
+	RightBrace lexer.Token
 }
 
 func (i IfMatch) LeadingTrivia() []lexer.Token {
@@ -978,10 +975,15 @@ func (i IfMatch) LeadingTrivia() []lexer.Token {
 }
 
 func (i IfMatch) Span() lexer.Span {
-	return spanOf(i.IfHeader).Add(spanOf(i.Cases))
+	return spanOf(i.IfHeader).Add(spanOf(i.Cases)).Add(spanOf(i.RightBrace))
 }
 
 func (i IfMatch) ASTString(depth int) string {
+	if i.LeftBrace.Type == lexer.LeftBrace {
+		return fmt.Sprintf(
+			"IfMatch\n%sIfHeader: %s\n%sLeftBrace: %s\n%sCases: %s\n%sRightBrace: %s", indent(depth+1), i.IfHeader.ASTString(depth+1), indent(depth+1),
+			i.LeftBrace, indent(depth+1), printNodeSlice(depth+1, i.Cases), indent(depth+1), i.RightBrace)
+	}
 	return fmt.Sprintf(
 		"IfMatch\n%sIfHeader: %s\n%sCases: %s", indent(depth+1), i.IfHeader.ASTString(depth+1), indent(depth+1),
 		printNodeSlice(depth+1, i.Cases))
