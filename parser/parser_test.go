@@ -123,14 +123,8 @@ func Test(t *testing.T) {
 			// print y
 			// `),
 			Data: []byte(`
-			if (x)
-			| foo => 1
-			| bar =>
-			  if (y) {
-			   | a => 2
-			   | b => 3
-			  }
-			| baz => 4
+			fun foo x : int -> int
+			print x
 			`),
 		}})
 	if err != nil {

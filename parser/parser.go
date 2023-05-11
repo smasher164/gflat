@@ -171,7 +171,11 @@ func (p *parser) parseLetDecl() Node {
 				letFun.Equals = p.tok
 				p.next()
 			} else if p.tok.Type != lexer.LeftBrace {
-				panic("expected = or { after function signature")
+				if p.tok.Type == lexer.FatArrow {
+					panic("expected = or { after function signature")
+				}
+				return letFun // accept forward declaration
+				// panic("expected = or { after function signature") // handle forward declaration
 			}
 			letFun.Body = p.parseExpr()
 			return letFun
@@ -183,7 +187,11 @@ func (p *parser) parseLetDecl() Node {
 		return decl.Destructure
 	}
 	if p.tok.Type != lexer.Equals {
-		return Illegal{Node: decl.Destructure, Msg: "expected = after let declaration"}
+		if p.tok.Type == lexer.FatArrow {
+			panic("expected = or { after function signature")
+		}
+		return decl
+		// return Illegal{Node: decl.Destructure, Msg: "expected = after let declaration"}
 	}
 	decl.Equals = p.tok
 	p.next()
@@ -285,7 +293,12 @@ func (p *parser) parseFun() Node {
 		fun.FatArrow = p.tok
 		p.next()
 	} else if p.tok.Type != lexer.LeftBrace {
-		panic("expected => or { after function signature")
+		if p.tok.Type == lexer.Equals {
+			panic("expected => or { after function signature")
+		}
+		// handle forward declarations
+		return fun
+		// panic("expected => or { after function signature")
 	}
 	fun.Body = p.parseExpr()
 	return fun

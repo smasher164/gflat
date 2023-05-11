@@ -438,19 +438,39 @@ func (f LetFunction) LeadingTrivia() []lexer.Token {
 }
 
 func (f LetFunction) Span() lexer.Span {
-	return f.Let.Span.Add(spanOf(f.Body))
+	return f.Let.Span.Add(spanOf(f.Signature)).Add(spanOf(f.Body))
 }
 
 func (f LetFunction) ASTString(depth int) string {
-	if f.Name != nil {
+	// f.Name can be nil
+	// f.Equals and f.Body can be missing
+	// so we need to check for those cases
+	// f.Name missing, f.Equals, and f.Body missing
+	// f.Name missing, but Signature, Equals, and Body present
+	// f.Name present, but Equals and Body missing
+	// f.Name present, Signature present, but Equals and Body missing
+	// everything present
+
+	if f.Name == nil {
+		if f.Equals.Type != lexer.Equals {
+			return fmt.Sprintf(
+				"LetFunction\n%sLet: %s\n%sSignature: %s",
+				indent(depth+1), f.Let, indent(depth+1), f.Signature.ASTString(depth+1))
+		}
 		return fmt.Sprintf(
-			"LetFunction\n%sLet: %s\n%sName: %s\n%sSignature: %s\n%sEquals: %s\n%sBody: %s",
-			indent(depth+1), f.Let, indent(depth+1), f.Name.ASTString(depth+1), indent(depth+1), f.Signature.ASTString(depth+1), indent(depth+1), f.Equals, indent(depth+1), f.Body.ASTString(depth+1))
+			"LetFunction\n%sLet: %s\n%sSignature: %s\n%sEquals: %s\n%sBody: %s",
+			indent(depth+1), f.Let, indent(depth+1), f.Signature.ASTString(depth+1),
+			indent(depth+1), f.Equals, indent(depth+1), f.Body.ASTString(depth+1))
+	}
+	if f.Equals.Type != lexer.Equals {
+		return fmt.Sprintf(
+			"LetFunction\n%sLet: %s\n%sName: %s\n%sSignature: %s",
+			indent(depth+1), f.Let, indent(depth+1), f.Name.ASTString(depth+1), indent(depth+1), f.Signature.ASTString(depth+1))
 	}
 	return fmt.Sprintf(
-		"LetFunction\n%sLet: %s\n%sSignature: %s\n%sEquals: %s\n%sBody: %s",
-		indent(depth+1), f.Let, indent(depth+1), f.Signature.ASTString(depth+1),
-		indent(depth+1), f.Equals, indent(depth+1), f.Body.ASTString(depth+1))
+		"LetFunction\n%sLet: %s\n%sName: %s\n%sSignature: %s\n%sEquals: %s\n%sBody: %s",
+		indent(depth+1), f.Let, indent(depth+1), f.Name.ASTString(depth+1), indent(depth+1), f.Signature.ASTString(depth+1), indent(depth+1), f.Equals, indent(depth+1), f.Body.ASTString(depth+1))
+
 }
 
 type Function struct {
@@ -466,19 +486,29 @@ func (f Function) LeadingTrivia() []lexer.Token {
 }
 
 func (f Function) Span() lexer.Span {
-	return f.Fun.Span.Add(spanOf(f.Body))
+	return f.Fun.Span.Add(spanOf(f.Signature)).Add(spanOf(f.Body))
 }
 
 func (f Function) ASTString(depth int) string {
-	if f.Name != nil {
+	if f.Name == nil {
+		if f.FatArrow.Type != lexer.FatArrow {
+			return fmt.Sprintf(
+				"Function\n%sFun: %s\n%sSignature: %s",
+				indent(depth+1), f.Fun, indent(depth+1), f.Signature.ASTString(depth+1))
+		}
 		return fmt.Sprintf(
-			"Function\n%sFun: %s\n%sName: %s\n%sSignature: %s\n%sFatArrow: %s\n%sBody: %s",
-			indent(depth+1), f.Fun, indent(depth+1), f.Name.ASTString(depth+1), indent(depth+1), f.Signature.ASTString(depth+1), indent(depth+1), f.FatArrow, indent(depth+1), f.Body.ASTString(depth+1))
+			"Function\n%sFun: %s\n%sSignature: %s\n%sFatArrow: %s\n%sBody: %s",
+			indent(depth+1), f.Fun, indent(depth+1), f.Signature.ASTString(depth+1),
+			indent(depth+1), f.FatArrow, indent(depth+1), f.Body.ASTString(depth+1))
+	}
+	if f.FatArrow.Type != lexer.FatArrow {
+		return fmt.Sprintf(
+			"Function\n%sFun: %s\n%sName: %s\n%sSignature: %s",
+			indent(depth+1), f.Fun, indent(depth+1), f.Name.ASTString(depth+1), indent(depth+1), f.Signature.ASTString(depth+1))
 	}
 	return fmt.Sprintf(
-		"Function\n%sFun: %s\n%sSignature: %s\n%sFatArrow: %s\n%sBody: %s",
-		indent(depth+1), f.Fun, indent(depth+1), f.Signature.ASTString(depth+1),
-		indent(depth+1), f.FatArrow, indent(depth+1), f.Body.ASTString(depth+1))
+		"Function\n%sFun: %s\n%sName: %s\n%sSignature: %s\n%sFatArrow: %s\n%sBody: %s",
+		indent(depth+1), f.Fun, indent(depth+1), f.Name.ASTString(depth+1), indent(depth+1), f.Signature.ASTString(depth+1), indent(depth+1), f.FatArrow, indent(depth+1), f.Body.ASTString(depth+1))
 }
 
 type TupleElement struct {
@@ -537,10 +567,17 @@ func (l LetDecl) LeadingTrivia() []lexer.Token {
 }
 
 func (l LetDecl) Span() lexer.Span {
-	return l.Let.Span.Add(spanOf(l.Rhs))
+	return l.Let.Span.Add(spanOf(l.Destructure)).Add(spanOf(l.Rhs))
 }
 
 func (l LetDecl) ASTString(depth int) string {
+	if l.Equals.Type != lexer.Equals {
+		return fmt.Sprintf(
+			"LetDecl\n%sLet: %s\n%sDestructure: %s",
+			indent(depth+1),
+			l.Let, indent(depth+1),
+			l.Destructure.ASTString(depth+1))
+	}
 	return fmt.Sprintf(
 		"LetDecl\n%sLet: %s\n%sDestructure: %s\n%sEquals: %s\n%sRhs: %s",
 		indent(depth+1),
