@@ -397,7 +397,7 @@ func (a Token) OnDifferentLines(b Token) bool {
 
 func (t Token) IsBeforeSemicolon(shouldInsert bool, toksToCheck []TokenType) bool {
 	switch t.Type {
-	case RightParen, RightBrace, RightBracket, Ident, Number, String, StringEnd:
+	case RightParen, RightBrace, RightBracket, Ident, TypeArg, Number, String, StringEnd:
 		return true
 	}
 	// comma
@@ -409,7 +409,7 @@ func (t Token) IsBeforeSemicolon(shouldInsert bool, toksToCheck []TokenType) boo
 
 func (t Token) IsAfterSemicolon(shouldInsert bool, toksToCheck []TokenType) bool {
 	switch t.Type {
-	case LeftParen, LeftBrace, LeftBracket, Ident, Number, String, StringBeg:
+	case LeftParen, LeftBrace, LeftBracket, Ident, TypeArg, Number, String, StringBeg:
 		return true
 	}
 	// Or, Fun, SingleQuote

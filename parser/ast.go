@@ -692,10 +692,18 @@ func (t TypeDecl) LeadingTrivia() []lexer.Token {
 }
 
 func (t TypeDecl) Span() lexer.Span {
-	return t.Type.Span.Add(spanOf(t.Body))
+	return t.Type.Span.Add(spanOf(t.TypeParams)).Add(spanOf(t.Body))
 }
 
 func (t TypeDecl) ASTString(depth int) string {
+	if t.Equal.Type != lexer.Equals {
+		return fmt.Sprintf(
+			"TypeDecl\n%sType: %s\n%sName: %s\n%sTypeParams: %s",
+			indent(depth+1),
+			t.Type, indent(depth+1),
+			t.Name.ASTString(depth+1), indent(depth+1),
+			printNodeSlice(depth+1, t.TypeParams))
+	}
 	return fmt.Sprintf(
 		"TypeDecl\n%sType: %s\n%sName: %s\n%sTypeParams: %s\n%sEqual: %s\n%sBody: %s",
 		indent(depth+1),

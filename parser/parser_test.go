@@ -123,8 +123,8 @@ func Test(t *testing.T) {
 			// print y
 			// `),
 			Data: []byte(`
-			fun foo x : int -> int
-			print x
+			type Foo 'a
+			print Foo
 			`),
 		}})
 	if err != nil {

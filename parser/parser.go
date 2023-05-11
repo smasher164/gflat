@@ -949,6 +949,7 @@ TypeBody = SumType | TupleType | NamedType | FunctionType
 */
 func (p *parser) parseTypeDecl() Node {
 	defer p.trace("parseTypeDecl")()
+
 	typeTok := p.tok
 	p.next()
 	if p.tok.Type != lexer.Ident {
@@ -961,7 +962,12 @@ func (p *parser) parseTypeDecl() Node {
 		typeParams = append(typeParams, p.parseTypeParameter(true))
 	}
 	if p.tok.Type != lexer.Equals {
-		panic("missing equals")
+		// allow forward declarations
+		return TypeDecl{
+			Type:       typeTok,
+			Name:       typeName,
+			TypeParams: typeParams,
+		}
 	}
 	equals := p.tok
 	p.next()
