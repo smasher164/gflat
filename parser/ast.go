@@ -61,6 +61,7 @@ var (
 	_ Node = Where{}
 	_ Node = ImplDecl{}
 	_ Node = ArrayType{}
+	_ Node = NillableType{}
 )
 
 func spanOf(n any) lexer.Span {
@@ -1237,4 +1238,21 @@ func (a ArrayType) ASTString(depth int) string {
 		return fmt.Sprintf("ArrayType\n%sLeftBracket: %s\n%sRightBracket: %s\n%sType: %s", indent(depth+1), a.LeftBracket, indent(depth+1), a.RightBracket, indent(depth+1), a.Type.ASTString(depth+1))
 	}
 	return fmt.Sprintf("ArrayType\n%sLeftBracket: %s\n%sLength: %s\n%sRightBracket: %s\n%sType: %s", indent(depth+1), a.LeftBracket, indent(depth+1), a.Length, indent(depth+1), a.RightBracket, indent(depth+1), a.Type.ASTString(depth+1))
+}
+
+type NillableType struct {
+	Type         Node
+	QuestionMark lexer.Token
+}
+
+func (n NillableType) LeadingTrivia() []lexer.Token {
+	return leadingTriviaOf(n.Type)
+}
+
+func (n NillableType) Span() lexer.Span {
+	return spanOf(n.Type).Add(n.QuestionMark.Span)
+}
+
+func (n NillableType) ASTString(depth int) string {
+	return fmt.Sprintf("NillableType\n%sType: %s\n%sQuestionMark: %s", indent(depth+1), n.Type.ASTString(depth+1), indent(depth+1), n.QuestionMark)
 }

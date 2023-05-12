@@ -1221,7 +1221,7 @@ func (p *parser) parseTypeApplication(name Node, parseConstraint, parseAssignmen
 		name = p.parseTypeName()
 	}
 	typeApp.Elements = append(typeApp.Elements, name)
-	for p.tok.Type == lexer.LeftParen || p.tok.Type == lexer.TypeArg || p.tok.Type == lexer.Ident || p.tok.Type == lexer.Fun {
+	for beginsAnonType(p.tok.Type) {
 		if p.tok.Type == lexer.LeftParen {
 			typeApp.Elements = append(typeApp.Elements, p.parseTypeBody(false, parseConstraint, parseAssignment))
 		} else {
@@ -1277,8 +1277,8 @@ func (p *parser) parseArrayType(parseConstraint bool) Node {
 	return array
 }
 
-func (p *parser) parseTypeBodyWithoutWhere(parseSumType, parseConstraint, parseAssignment bool) Node {
-	defer p.trace("parseTypeBodyWithoutWhere")()
+func (p *parser) parseTypeBodyWithoutQuestionMark(parseSumType, parseConstraint, parseAssignment bool) Node {
+	defer p.trace("parseTypeBodyWithoutQuestionMark")()
 	// parse forall
 	if p.tok.Type == lexer.TypeArg {
 		var forall ForallType
@@ -1303,7 +1303,7 @@ func (p *parser) parseTypeBodyWithoutWhere(parseSumType, parseConstraint, parseA
 			forall.Type = p.parseTypeBody(parseSumType, parseConstraint, false)
 			return forall
 		}
-		if p.tok.Type == lexer.LeftParen || p.tok.Type == lexer.TypeArg || p.tok.Type == lexer.Ident || p.tok.Type == lexer.Fun {
+		if beginsAnonType(p.tok.Type) {
 			return p.parseTypeApplication(typeArg, parseConstraint, parseAssignment)
 		}
 		return typeArg
@@ -1312,7 +1312,7 @@ func (p *parser) parseTypeBodyWithoutWhere(parseSumType, parseConstraint, parseA
 	case lexer.LeftParen:
 		if parseConstraint || parseAssignment {
 			ttc := p.parseTupleTypeConstraint(parseAssignment)
-			if p.tok.Type == lexer.LeftParen || p.tok.Type == lexer.TypeArg || p.tok.Type == lexer.Ident {
+			if beginsAnonType(p.tok.Type) {
 				return p.parseTypeApplication(ttc, parseConstraint, parseAssignment)
 			} else {
 				return ttc
@@ -1347,6 +1347,20 @@ func (p *parser) parseTypeBodyWithoutWhere(parseSumType, parseConstraint, parseA
 	default:
 		panic("missing type body")
 	}
+}
+
+func (p *parser) parseTypeBodyWithoutWhere(parseSumType, parseConstraint, parseAssignment bool) Node {
+	t := p.parseTypeBodyWithoutQuestionMark(parseSumType, parseConstraint, parseAssignment)
+	// parse nillable type
+	if p.tok.Type == lexer.QuestionMark {
+		question := p.tok
+		p.next()
+		return NillableType{
+			Type:         t,
+			QuestionMark: question,
+		}
+	}
+	return t
 }
 
 // TODO: TypeBody should have one sum case, and if it sees a |, it should parse more cases.
@@ -1384,12 +1398,20 @@ func (p *parser) parseSumType() Node {
 		}
 		sumElem.Name = Ident{Name: p.tok}
 		p.next()
-		if p.tok.Type == lexer.LeftParen || p.tok.Type == lexer.TypeArg || p.tok.Type == lexer.Ident || p.tok.Type == lexer.Fun {
+		if beginsAnonType(p.tok.Type) {
 			sumElem.Type = p.parseTypeBody(false, false, false)
 		}
 		sum.Elements = append(sum.Elements, sumElem)
 	}
 	return sum
+}
+
+func beginsAnonType(ttype lexer.TokenType) bool {
+	switch ttype {
+	case lexer.LeftParen, lexer.TypeArg, lexer.Ident, lexer.Fun, lexer.LeftBracket:
+		return true
+	}
+	return false
 }
 
 // "=" is for default values.
