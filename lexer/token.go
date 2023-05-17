@@ -409,7 +409,7 @@ func (t Token) IsBeforeSemicolon(shouldInsert bool, toksToCheck []TokenType) boo
 
 func (t Token) IsAfterSemicolon(shouldInsert bool, toksToCheck []TokenType) bool {
 	switch t.Type {
-	case LeftParen, LeftBrace, LeftBracket, Ident, TypeArg, Number, String, StringBeg:
+	case LeftParen, LeftBrace, LeftBracket, Ident, TypeArg, Number, String, StringBeg, Fun: // when would Fun *not* be a prefix?
 		return true
 	}
 	// Or, Fun, SingleQuote

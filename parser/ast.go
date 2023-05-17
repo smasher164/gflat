@@ -429,7 +429,7 @@ func (n Arrow) ASTString(depth int) string {
 type LetFunction struct {
 	Let       lexer.Token
 	Name      Node
-	Signature FunctionSignature
+	Signature Node
 	Equals    lexer.Token
 	Body      Node
 }
@@ -477,7 +477,7 @@ func (f LetFunction) ASTString(depth int) string {
 type Function struct {
 	Fun       lexer.Token
 	Name      Node
-	Signature FunctionSignature
+	Signature Node
 	FatArrow  lexer.Token
 	Body      Node
 }
@@ -635,7 +635,7 @@ func (i IfHeader) ASTString(depth int) string {
 }
 
 type If struct {
-	IfHeader IfHeader
+	IfHeader Node
 	Body     Node
 }
 
@@ -656,7 +656,7 @@ func (i If) ASTString(depth int) string {
 }
 
 type IfElse struct {
-	IfHeader IfHeader
+	IfHeader Node
 	Body     Node
 	Else     lexer.Token
 	ElseBody Node

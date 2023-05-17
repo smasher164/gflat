@@ -1425,7 +1425,7 @@ func (p *parser) parseTupleType() Node {
 	var elems []Node
 	for p.tok.Type != lexer.RightParen && p.tok.Type != lexer.EOF {
 		var elem TupleElement
-		p.shouldInsertDelimAfter(true, lexer.Fun, lexer.TypeArg)
+		p.shouldInsertDelimAfter(true, lexer.TypeArg)
 		switch p.tok.Type {
 		case lexer.Ident:
 			// Could be a field name or a named type.
@@ -1529,7 +1529,6 @@ func (p *parser) parseImportDeclPackage() Node {
 			Path:    path,
 		}
 	}
-	fmt.Println(p.tok)
 	panic("invalid import declaration")
 }
 
