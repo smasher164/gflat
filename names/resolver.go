@@ -108,6 +108,8 @@ func defineDestructure(env *Env, n, ctx parser.Node, f func(string)) parser.Node
 		return defineDestructure(env, n.X, ctx, f)
 	case parser.TypeAnnotation:
 		panic("todo")
+	case parser.Param:
+		return defineDestructure(env, n.Name, ctx, f)
 	}
 	panic(fmt.Sprintf("unreachable %T", n))
 }
@@ -115,9 +117,12 @@ func defineDestructure(env *Env, n, ctx parser.Node, f func(string)) parser.Node
 func setIllegals(env *Env, id string, body parser.Node) {
 	switch body := body.(type) {
 	case parser.Illegal:
-		if nid, ok := body.Node.(parser.Ident); ok {
+		switch nid := body.Node.(type) {
+		case parser.Ident:
 			sym := env.symbols[id]
 			sym.Undefined[nid.Name.Data] = struct{}{}
+		default:
+			setIllegals(env, id, nid)
 		}
 	case Var:
 		nid := body.OriginalIdent.(parser.Ident).Name.Data
@@ -152,23 +157,11 @@ func resolve(env *Env, n parser.Node) parser.Node {
 		n.Body = resolve(env, n.Body)
 		return n
 	case parser.Ident:
-		// add an ident to requires if it's from the scope we care about.
-		// if def, ok := env.LookupLocal(n.Name.Data); ok {
-		// 	requires[n.Name.Data] = struct{}{}
-		// 	return def.Def // might as well return the definition here, since we have it.
-		// }
-		// does this have to take mutual recursion into account?
 		def, ok := env.LookupStack(n.Name.Data)
-		// if def is from the same scope as the requires, add it to the requires set.
 		if ok {
 			return def.Def
 		}
-
 		return parser.Illegal{Node: n, Msg: fmt.Sprintf("undefined: %s", n.Name.Data)}
-		// this is a lookup, not an introduction.
-		// v := Var{OriginalIdent: n, Env: env}
-		// env.AddSymbol(n.Name.Data, v) // Does this correspond to our logic?
-		// return v
 	case parser.Illegal:
 		n.Node = resolve(env, n.Node)
 		return n // At what point do we reject programs with illegal nodes?
@@ -194,9 +187,12 @@ func resolve(env *Env, n parser.Node) parser.Node {
 		}
 		n.Name = defineDestructure(env, n.Name, n, func(string) {})
 		n.Signature = resolve(env, n.Signature)
+		sig := n.Signature.(parser.FunctionSignature)
 		// Add function name to scope. But allow it to get shadowed.
 		fnNameScope := env.AddScope().AddSymbol(id, Definition{Def: n.Name, Ctx: n, Undefined: make(map[string]struct{})})
 		bodyScope := fnNameScope.AddScope()
+		sig.Param = defineDestructure(bodyScope, sig.Param, sig, func(id string) {})
+		n.Signature = sig
 		n.Body = resolve(bodyScope, n.Body)
 		setIllegals(env, id, n.Body)
 		return n
@@ -264,16 +260,14 @@ func resolve(env *Env, n parser.Node) parser.Node {
 			n.Elements[i] = resolve(env, n.Elements[i]) // TODO: fix refs to Illegal node later.
 			// check if caller references an ident whose len(def.Undefined) != 0
 			// if so, error.
-			if i != len(n.Elements)-1 {
-				nd := n.Elements[i]
-				if id, ok := findUndefined(nd); ok {
-					return parser.Illegal{Node: n, Msg: fmt.Sprintf("%s called before it is declared", id)}
-				}
-				// for s := range env.symbols[id].Undefined {
-				// 	return parser.Illegal{Node: n, Msg: fmt.Sprintf("cannot bind %s before declaring %s", id, s)}
-				// }
+			// if i != len(n.Elements)-1 {
+			nd := n.Elements[i]
+			if id, ok := findUndefined(nd); ok {
+				n.Elements[i] = parser.Illegal{Node: nd, Msg: fmt.Sprintf("%s is used in application before it is declared", id)}
 			}
+			// }
 		}
+		return n
 	case parser.PostfixExpr:
 	case parser.SelectorExpr:
 	case parser.PatternCase:
@@ -299,6 +293,27 @@ func resolveIllegals(env *Env, n parser.Node) parser.Node {
 		}
 		return n
 	case parser.Illegal:
+		switch nid := n.Node.(type) {
+		case parser.Ident:
+			if def, ok := env.LookupLocal(nid.Name.Data); ok {
+				// update this node to point to the definition.
+				return def.Def
+			} else {
+				// should we modify the message to be that the ident is undefined?
+				n.Msg = fmt.Sprintf("undefined: %s", nid.Name.Data)
+				return n
+			}
+		case Var:
+			id := nid.OriginalIdent.(parser.Ident).Name.Data
+			if def, ok := env.LookupLocal(id); ok {
+				// update this node to point to the definition.
+				return def.Def
+			} else {
+				// should we modify the message to be that the ident is undefined?
+				n.Msg = fmt.Sprintf("undefined: %s", id)
+				return n
+			}
+		}
 		if nid, ok := n.Node.(parser.Ident); ok {
 			if def, ok := env.LookupLocal(nid.Name.Data); ok {
 				// update this node to point to the definition.
@@ -317,6 +332,9 @@ func resolveIllegals(env *Env, n parser.Node) parser.Node {
 		for i := range n.Elements {
 			n.Elements[i] = resolveIllegals(env, n.Elements[i])
 		}
+		return n
+	case parser.LetFunction:
+		n.Body = resolveIllegals(env, n.Body)
 		return n
 	case parser.Function:
 		n.Body = resolveIllegals(env, n.Body)
