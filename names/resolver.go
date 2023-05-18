@@ -205,9 +205,12 @@ func resolve(env *Env, n parser.Node) parser.Node {
 		}
 		n.Name = defineDestructure(env, n.Name, n, func(string) {})
 		n.Signature = resolve(env, n.Signature)
+		sig := n.Signature.(parser.FunctionSignature)
 		// Add function name to scope. But allow it to get shadowed.
 		fnNameScope := env.AddScope().AddSymbol(id, Definition{Def: n.Name, Ctx: n, Undefined: make(map[string]struct{})})
 		bodyScope := fnNameScope.AddScope()
+		sig.Param = defineDestructure(bodyScope, sig.Param, sig, func(id string) {})
+		n.Signature = sig
 		n.Body = resolve(bodyScope, n.Body)
 		setIllegals(env, id, n.Body)
 		return n
