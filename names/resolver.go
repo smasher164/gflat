@@ -369,11 +369,37 @@ func resolveIllegals(env *Env, n parser.Node) parser.Node {
 }
 
 func findUndefined(nd parser.Node) (string, bool) {
+	// handle other types of nodes too.
 	switch nd := nd.(type) {
 	case Var:
 		udef := nd.Env.symbols[nd.OriginalIdent.(parser.Ident).Name.Data].Undefined
 		for k := range udef {
 			return k, true
+		}
+	case parser.BinaryExpr:
+		if id, ok := findUndefined(nd.Left); ok {
+			return id, ok
+		}
+		return findUndefined(nd.Right)
+	case parser.Tuple:
+		for i := range nd.Elements {
+			if id, ok := findUndefined(nd.Elements[i]); ok {
+				return id, ok
+			}
+		}
+	case parser.TupleElement:
+		return findUndefined(nd.X)
+	case parser.Block:
+		for i := range nd.Body {
+			if id, ok := findUndefined(nd.Body[i]); ok {
+				return id, ok
+			}
+		}
+	case parser.CallExpr:
+		for i := range nd.Elements {
+			if id, ok := findUndefined(nd.Elements[i]); ok {
+				return id, ok
+			}
 		}
 	}
 	return "", false

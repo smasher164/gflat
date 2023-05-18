@@ -14,7 +14,7 @@ func Test(t *testing.T) {
 		"test.txt": &fstest.MapFile{
 			Data: []byte(`
 			let foo () = bar ()
-			let x = (foo)
+			let x = (foo) (foo)
 			let bar () = 1
 			`),
 		}})
