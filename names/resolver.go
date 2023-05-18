@@ -133,6 +133,12 @@ func setIllegals(env *Env, id string, body parser.Node) {
 	case parser.BinaryExpr:
 		setIllegals(env, id, body.Left)
 		setIllegals(env, id, body.Right)
+	case parser.Tuple:
+		for i := range body.Elements {
+			setIllegals(env, id, body.Elements[i])
+		}
+	case parser.TupleElement:
+		setIllegals(env, id, body.X)
 	case parser.Block:
 		for i := range body.Body {
 			setIllegals(env, id, body.Body[i])
@@ -228,13 +234,11 @@ func resolve(env *Env, n parser.Node) parser.Node {
 		}
 		return n
 	case parser.LetDecl:
-		n.Rhs = resolve(env, n.Rhs) // Does this correspond to my strategy?
 		// resolve right, then introduce bindings. don't leave it up to the ident rule.
-		// id := n.Destructure.(parser.Ident).Name.Data
+		n.Rhs = resolve(env, n.Rhs) // Does this correspond to my strategy?
 		n.Destructure = defineDestructure(env, n.Destructure, n, func(id string) {
 			setIllegals(env, id, n.Rhs)
 		})
-		// setIllegals(env, id, n.Rhs)
 		return n
 	case parser.VarDecl:
 		// resolve right, then introduce bindings. don't leave it up to the ident rule.
@@ -337,6 +341,14 @@ func resolveIllegals(env *Env, n parser.Node) parser.Node {
 	case parser.BinaryExpr:
 		n.Left = resolveIllegals(env, n.Left)
 		n.Right = resolveIllegals(env, n.Right)
+		return n
+	case parser.Tuple:
+		for i := range n.Elements {
+			n.Elements[i] = resolveIllegals(env, n.Elements[i])
+		}
+		return n
+	case parser.TupleElement:
+		n.X = resolveIllegals(env, n.X)
 		return n
 	case parser.CallExpr:
 		for i := range n.Elements {
