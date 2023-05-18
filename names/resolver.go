@@ -16,7 +16,6 @@ type Var struct {
 
 func (v Var) ASTString(depth int) string {
 	return fmt.Sprintf("Var: %s", v.OriginalIdent.ASTString(depth))
-	// return v.OriginalIdent.ASTString(depth) // do we want to print the scope?
 }
 
 func (v Var) LeadingTrivia() []lexer.Token {
@@ -32,6 +31,7 @@ var _ parser.Node = Var{}
 type Definition struct {
 	Def       parser.Node
 	Ctx       parser.Node         // additional context for error messages
+	IsForward bool                // is this a forward declaration?
 	Undefined map[string]struct{} // if function or type that references undefined symbols, we can track them here.
 }
 
@@ -66,6 +66,7 @@ func (e *Env) LookupStack(name string) (d Definition, ok bool) {
 	return d, false
 }
 
+// add builtins to this
 var Universe = &Env{
 	parent: nil,
 }
@@ -77,53 +78,38 @@ func Resolve(n parser.Node) parser.Node {
 	return resolve(Universe.AddScope(), n)
 }
 
-func defineDestructure(env *Env, n, ctx parser.Node) parser.Node {
+func defineDestructure(env *Env, n, ctx parser.Node, f func(string)) parser.Node {
 	switch n := n.(type) {
 	case parser.Ident:
+		defer f(n.Name.Data)
+		isForward := false
+		switch ctx := ctx.(type) {
+		case parser.LetFunction:
+			isForward = ctx.Body == nil
+		case parser.Function:
+			isForward = ctx.Body == nil
+		}
 		if localDef, ok := env.LookupLocal(n.Name.Data); ok {
 			// we don't allow shadowing in local scope
+			if localDef.IsForward && !isForward {
+				return localDef.Def
+			}
 			return parser.Illegal{Node: localDef.Def, Msg: fmt.Sprintf("%s was already defined", n.Name.Data)}
 		}
 		v := Var{OriginalIdent: n, Env: env}
-		env.AddSymbol(n.Name.Data, Definition{Def: v, Ctx: ctx, Undefined: make(map[string]struct{})}) // Does this correspond to our logic?
+		env.AddSymbol(n.Name.Data, Definition{Def: v, Ctx: ctx, IsForward: isForward, Undefined: make(map[string]struct{})}) // Does this correspond to our logic?
 		return v
 	case parser.Tuple:
-		panic("todo")
+		for i := range n.Elements {
+			n.Elements[i] = defineDestructure(env, n.Elements[i], ctx, f)
+		}
+		return n
+	case parser.TupleElement:
+		return defineDestructure(env, n.X, ctx, f)
 	case parser.TypeAnnotation:
 		panic("todo")
 	}
-	panic("unreachable")
-}
-
-// func depsDeclared(env *Env, n parser.Node) parser.Node {
-// 	// make sure to reuse LocalRequires if it's already there.
-// 	// ultimately, we need to know if we require something not defined yet.
-// 	switch n := n.(type) {
-// 	case Var:
-// 		// check that the env of the ident is the same as the env we're resolving in.
-// 		if n.Env == env {
-// 			requires[n.OriginalIdent.(parser.Ident).Name.Data] = struct{}{}
-// 		}
-// 	case parser.BinaryExpr:
-// 		appendRequires(env, n.Left, requires)
-// 		appendRequires(env, n.Right, requires)
-// 	case parser.Block:
-// 		for i := range n.Body {
-// 			appendRequires(env, n.Body[i], requires)
-// 		}
-// 	case parser.CallExpr:
-// 	}
-// }
-
-func illegalIdentsExist(n parser.Node) bool {
-	switch n := n.(type) {
-	case parser.Illegal:
-		_, ok := n.Node.(parser.Ident)
-		return ok
-	case parser.BinaryExpr:
-		return illegalIdentsExist(n.Left) || illegalIdentsExist(n.Right)
-	}
-	panic("unreachable")
+	panic(fmt.Sprintf("unreachable %T", n))
 }
 
 func setIllegals(env *Env, id string, body parser.Node) {
@@ -135,9 +121,9 @@ func setIllegals(env *Env, id string, body parser.Node) {
 		}
 	case Var:
 		nid := body.OriginalIdent.(parser.Ident).Name.Data
-		if len(body.Env.symbols[nid].Undefined) != 0 {
+		for udef := range body.Env.symbols[nid].Undefined {
 			sym := env.symbols[id]
-			sym.Undefined[nid] = struct{}{}
+			sym.Undefined[udef] = struct{}{}
 		}
 	case parser.BinaryExpr:
 		setIllegals(env, id, body.Left)
@@ -200,60 +186,54 @@ func resolve(env *Env, n parser.Node) parser.Node {
 	case parser.Param:
 	case parser.Arrow:
 	case parser.LetFunction:
-		// TODO: we should collect free variables too.
-		id := n.Name.(parser.Ident).Name.Data
-		n.Name = defineDestructure(env, n.Name, n)
-		n.Signature = resolve(env, n.Signature)
-		// Add function name to scope. But allow it to get shadowed.
-		fnNameScope := env.AddScope().AddSymbol(id, Definition{Def: n.Name, Ctx: n, Undefined: make(map[string]struct{})})
-		bodyScope := fnNameScope.AddScope()
-		n.Body = resolve(bodyScope, n.Body)
-		setIllegals(env, id, n.Body)
-		// if illegalIdentsExist(n.Body) { // we could coalesce this check inside the resolve traversal.
-		// 	sym := env.symbols[id]
-		// 	sym.HasUndefined = true
-		// 	env.symbols[id] = sym
-		// }
-		return n
-	case parser.Function:
-		// TODO: we should collect free variables too.
+		// We don't have to do closure conversion cause the target supports them.
 		id := n.Name.(parser.Ident).Name.Data
 		for _, v := range env.symbols {
 			v := v
 			delete(v.Undefined, id)
 		}
-		n.Name = defineDestructure(env, n.Name, n)
+		n.Name = defineDestructure(env, n.Name, n, func(string) {})
 		n.Signature = resolve(env, n.Signature)
 		// Add function name to scope. But allow it to get shadowed.
 		fnNameScope := env.AddScope().AddSymbol(id, Definition{Def: n.Name, Ctx: n, Undefined: make(map[string]struct{})})
 		bodyScope := fnNameScope.AddScope()
 		n.Body = resolve(bodyScope, n.Body)
 		setIllegals(env, id, n.Body)
-		// if illegalIdentsExist(n.Body) { // we could coalesce this check inside the resolve traversal.
-		// 	sym := env.symbols[id]
-		// 	sym.HasUndefined = true
-		// 	env.symbols[id] = sym
-		// }
+		return n
+	case parser.Function:
+		// We don't have to do closure conversion cause the target supports them.
+		id := n.Name.(parser.Ident).Name.Data
+		for _, v := range env.symbols {
+			v := v
+			delete(v.Undefined, id)
+		}
+		n.Name = defineDestructure(env, n.Name, n, func(string) {})
+		n.Signature = resolve(env, n.Signature)
+		// Add function name to scope. But allow it to get shadowed.
+		fnNameScope := env.AddScope().AddSymbol(id, Definition{Def: n.Name, Ctx: n, Undefined: make(map[string]struct{})})
+		bodyScope := fnNameScope.AddScope()
+		n.Body = resolve(bodyScope, n.Body)
+		setIllegals(env, id, n.Body)
 		return n
 	case parser.TupleElement:
 	case parser.Tuple:
 	case parser.LetDecl:
-		// resolve right, then introduce bindings. don't leave it up to the ident rule.
-		// figure out which local bindings rhs depends on.
-		// append those to the requires set.
-		id := n.Destructure.(parser.Ident).Name.Data
-
 		n.Rhs = resolve(env, n.Rhs) // Does this correspond to my strategy?
-
-		// requires := make(map[string]struct{})
-		// appendRequires(env, n.Rhs, requires)
-		n.Destructure = defineDestructure(env, n.Destructure, n)
-		setIllegals(env, id, n.Rhs)
+		// resolve right, then introduce bindings. don't leave it up to the ident rule.
+		// id := n.Destructure.(parser.Ident).Name.Data
+		n.Destructure = defineDestructure(env, n.Destructure, n, func(id string) {
+			setIllegals(env, id, n.Rhs)
+		})
+		// setIllegals(env, id, n.Rhs)
 		return n
 	case parser.VarDecl:
 		// resolve right, then introduce bindings. don't leave it up to the ident rule.
+		// id := n.Destructure.(parser.Ident).Name.Data
 		n.Rhs = resolve(env, n.Rhs) // Does this correspond to my strategy?
-		n.Destructure = defineDestructure(env, n.Destructure, n)
+		n.Destructure = defineDestructure(env, n.Destructure, n, func(id string) {
+			setIllegals(env, id, n.Rhs)
+		})
+		// setIllegals(env, id, n.Rhs)
 		return n
 	case parser.IfHeader:
 		n.Cond = resolve(env, n.Cond)
@@ -352,11 +332,9 @@ func findUndefined(nd parser.Node) (string, bool) {
 	switch nd := nd.(type) {
 	case Var:
 		udef := nd.Env.symbols[nd.OriginalIdent.(parser.Ident).Name.Data].Undefined
-		fmt.Println("udef", nd.OriginalIdent.(parser.Ident).Name.Data, udef)
 		for k := range udef {
 			return k, true
 		}
 	}
 	return "", false
-	panic("unreachable")
 }

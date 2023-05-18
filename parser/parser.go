@@ -614,7 +614,7 @@ func (p *parser) parseDestructure() Node {
 	return des
 }
 
-// TupleDestructur	e = "(" Destructure ")"
+// TupleDestructure = "(" Destructure ")"
 // TupleDestructure = "(" Destructure "," Destructure ")"
 func (p *parser) parseTupleDestructure() Node {
 	defer p.trace("parseTupleDestructure")()

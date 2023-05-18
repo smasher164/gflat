@@ -13,9 +13,7 @@ func Test(t *testing.T) {
 	l, err := lexer.NewLexer("test.txt", fstest.MapFS{
 		"test.txt": &fstest.MapFile{
 			Data: []byte(`
-			fun foo () => bar()
-			fun bar () => 1
-			let x = foo()
+			let (x, y) = (1, 2)
 			`),
 		}})
 	if err != nil {
