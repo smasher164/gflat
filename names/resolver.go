@@ -215,7 +215,18 @@ func resolve(env *Env, n parser.Node) parser.Node {
 		setIllegals(env, id, n.Body)
 		return n
 	case parser.TupleElement:
+		n.X = resolve(env, n.X)
+		return n
 	case parser.Tuple:
+		// Note: Tuple literals have an ambiguity in that they can be used for struct literals and map literals.
+		// Since we don't have type information, we can't resolve this ambiguity here.
+		// For struct literals, if a field name is assigned, and that ident isn't in scope, we treat that as an error
+		// and fix it up in type checking. If it *is* in scope, it is a false positive.
+		// In reality, if it's a struct, there should be a new scope created for the struct fields that are introduced.
+		for i := range n.Elements {
+			n.Elements[i] = resolve(env, n.Elements[i])
+		}
+		return n
 	case parser.LetDecl:
 		n.Rhs = resolve(env, n.Rhs) // Does this correspond to my strategy?
 		// resolve right, then introduce bindings. don't leave it up to the ident rule.
@@ -227,12 +238,10 @@ func resolve(env *Env, n parser.Node) parser.Node {
 		return n
 	case parser.VarDecl:
 		// resolve right, then introduce bindings. don't leave it up to the ident rule.
-		// id := n.Destructure.(parser.Ident).Name.Data
 		n.Rhs = resolve(env, n.Rhs) // Does this correspond to my strategy?
 		n.Destructure = defineDestructure(env, n.Destructure, n, func(id string) {
 			setIllegals(env, id, n.Rhs)
 		})
-		// setIllegals(env, id, n.Rhs)
 		return n
 	case parser.IfHeader:
 		n.Cond = resolve(env, n.Cond)
@@ -263,12 +272,10 @@ func resolve(env *Env, n parser.Node) parser.Node {
 			n.Elements[i] = resolve(env, n.Elements[i]) // TODO: fix refs to Illegal node later.
 			// check if caller references an ident whose len(def.Undefined) != 0
 			// if so, error.
-			// if i != len(n.Elements)-1 {
 			nd := n.Elements[i]
 			if id, ok := findUndefined(nd); ok {
 				n.Elements[i] = parser.Illegal{Node: nd, Msg: fmt.Sprintf("%s is used in application before it is declared", id)}
 			}
-			// }
 		}
 		return n
 	case parser.PostfixExpr:
