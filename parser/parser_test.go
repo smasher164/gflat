@@ -122,8 +122,11 @@ func Test(t *testing.T) {
 			// let y = x[0]
 			// print y
 			// `),
+			// Data: []byte(`
+			// type Maybe 't = 't?
+			// `),
 			Data: []byte(`
-			type Maybe 't = 't?
+			1 + 2 * 3 ** 4
 			`),
 		}})
 	if err != nil {
