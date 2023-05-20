@@ -258,6 +258,27 @@ func visit1(n parser.Node, f visitorFunc) (parser.Node, bool) {
 	case parser.Illegal:
 		n.Node, quit = f(n.Node, rec)
 		return n, quit
+	case parser.PrefixExpr:
+		n.X, quit = f(n.X, rec)
+		return n, quit
+	case parser.PostfixExpr:
+		n.X, quit = f(n.X, rec)
+		return n, quit
+	case parser.If:
+		if n.IfHeader, quit = f(n.IfHeader, rec); quit {
+			return n, quit
+		}
+		n.Body, quit = f(n.Body, rec)
+		return n, quit
+	case parser.IfElse:
+		if n.IfHeader, quit = f(n.IfHeader, rec); quit {
+			return n, quit
+		}
+		if n.Body, quit = f(n.Body, rec); quit {
+			return n, quit
+		}
+		n.ElseBody, quit = f(n.ElseBody, rec)
+		return n, quit
 	default:
 		return f(n, rec)
 	}
