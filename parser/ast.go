@@ -58,7 +58,7 @@ var (
 	_ Node = IndexExpr{}
 	_ Node = ImportDecl{}
 	_ Node = ImportDeclPackage{}
-	_ Node = Where{}
+	_ Node = With{}
 	_ Node = ImplDecl{}
 	_ Node = ArrayType{}
 	_ Node = NillableType{}
@@ -349,7 +349,7 @@ func (n TupleParam) ASTString(depth int) string {
 type FunctionSignature struct {
 	Param  Node
 	Arrows []Node
-	Where  lexer.Token
+	With   lexer.Token
 	Clause Node
 }
 
@@ -358,16 +358,16 @@ func (n FunctionSignature) LeadingTrivia() []lexer.Token {
 }
 
 func (n FunctionSignature) Span() lexer.Span {
-	return spanOf(n.Param).Add(spanOf(n.Arrows)).Add(n.Where.Span).Add(spanOf(n.Clause))
+	return spanOf(n.Param).Add(spanOf(n.Arrows)).Add(n.With.Span).Add(spanOf(n.Clause))
 }
 
 func (n FunctionSignature) ASTString(depth int) string {
-	if n.Where.Type == lexer.Where {
+	if n.With.Type == lexer.With {
 		return fmt.Sprintf(
-			"FunctionSignature\n%sParam: %s\n%sArrows: %s\n%sWhere: %s\n%sClause: %s",
+			"FunctionSignature\n%sParam: %s\n%sArrows: %s\n%sWith: %s\n%sClause: %s",
 			indent(depth+1), n.Param.ASTString(depth+1), indent(depth+1),
 			printNodeSlice(depth+1, n.Arrows), indent(depth+1),
-			n.Where, indent(depth+1), n.Clause.ASTString(depth+1))
+			n.With, indent(depth+1), n.Clause.ASTString(depth+1))
 	}
 	return fmt.Sprintf(
 		"FunctionSignature\n%sParam: %s\n%sArrows: %s",
@@ -1161,29 +1161,29 @@ func (i ImportDeclPackage) ASTString(depth int) string {
 	return fmt.Sprintf("ImportDeclPackage\n%sPath: %s", indent(depth+1), i.Path.ASTString(depth+1))
 }
 
-type Where struct {
+type With struct {
 	TypeBody Node
-	Where    lexer.Token
+	With     lexer.Token
 	Clause   Node
 }
 
-func (w Where) LeadingTrivia() []lexer.Token {
+func (w With) LeadingTrivia() []lexer.Token {
 	return leadingTriviaOf(w.TypeBody)
 }
 
-func (w Where) Span() lexer.Span {
+func (w With) Span() lexer.Span {
 	return spanOf(w.TypeBody).Add(spanOf(w.Clause))
 }
 
-func (w Where) ASTString(depth int) string {
-	return fmt.Sprintf("Where\n%sTypeBody: %s\n%sWhere: %s\n%sClause: %s", indent(depth+1), w.TypeBody.ASTString(depth+1), indent(depth+1), w.Where, indent(depth+1), w.Clause.ASTString(depth+1))
+func (w With) ASTString(depth int) string {
+	return fmt.Sprintf("With\n%sTypeBody: %s\n%sWith: %s\n%sClause: %s", indent(depth+1), w.TypeBody.ASTString(depth+1), indent(depth+1), w.With, indent(depth+1), w.Clause.ASTString(depth+1))
 }
 
 type ImplDecl struct {
 	Impl   lexer.Token
 	Name   Node
 	Args   Node
-	Where  lexer.Token
+	With   lexer.Token
 	Clause Node
 	Equals lexer.Token
 	Body   Node
@@ -1204,17 +1204,17 @@ func (i ImplDecl) ASTString(depth int) string {
 	// the case where clause is nil
 	// the case where both are nil
 	if i.Body != nil && i.Clause != nil {
-		return fmt.Sprintf("ImplDecl\n%sImpl: %s\n%sName: %s\n%sArgs: %s\n%sWhere: %s\n%sClause: %s\n%sEquals: %s\n%sBody: %s", indent(depth+1), i.Impl, indent(depth+1), i.Name.ASTString(depth+1), indent(depth+1), i.Args.ASTString(depth+1), indent(depth+1), i.Where, indent(depth+1), i.Clause.ASTString(depth+1), indent(depth+1), i.Equals, indent(depth+1), i.Body.ASTString(depth+1))
+		return fmt.Sprintf("ImplDecl\n%sImpl: %s\n%sName: %s\n%sArgs: %s\n%sWith: %s\n%sClause: %s\n%sEquals: %s\n%sBody: %s", indent(depth+1), i.Impl, indent(depth+1), i.Name.ASTString(depth+1), indent(depth+1), i.Args.ASTString(depth+1), indent(depth+1), i.With, indent(depth+1), i.Clause.ASTString(depth+1), indent(depth+1), i.Equals, indent(depth+1), i.Body.ASTString(depth+1))
 	}
 	if i.Body != nil {
-		// this implies that Where and Clause don't exist
+		// this implies that With and Clause don't exist
 		return fmt.Sprintf("ImplDecl\n%sImpl: %s\n%sName: %s\n%sArgs: %s\n%sEquals: %s\n%sBody: %s", indent(depth+1), i.Impl, indent(depth+1), i.Name.ASTString(depth+1), indent(depth+1), i.Args.ASTString(depth+1), indent(depth+1), i.Equals, indent(depth+1), i.Body.ASTString(depth+1))
 	}
 	if i.Clause != nil {
 		// this implies that Equals and Body don't exist
-		return fmt.Sprintf("ImplDecl\n%sImpl: %s\n%sName: %s\n%sArgs: %s\n%sWhere: %s\n%sClause: %s", indent(depth+1), i.Impl, indent(depth+1), i.Name.ASTString(depth+1), indent(depth+1), i.Args.ASTString(depth+1), indent(depth+1), i.Where, indent(depth+1), i.Clause.ASTString(depth+1))
+		return fmt.Sprintf("ImplDecl\n%sImpl: %s\n%sName: %s\n%sArgs: %s\n%sWith: %s\n%sClause: %s", indent(depth+1), i.Impl, indent(depth+1), i.Name.ASTString(depth+1), indent(depth+1), i.Args.ASTString(depth+1), indent(depth+1), i.With, indent(depth+1), i.Clause.ASTString(depth+1))
 	}
-	// this implies that Where, Clause, Equals, and Body don't exist
+	// this implies that With, Clause, Equals, and Body don't exist
 	return fmt.Sprintf("ImplDecl\n%sImpl: %s\n%sName: %s\n%sArgs: %s", indent(depth+1), i.Impl, indent(depth+1), i.Name.ASTString(depth+1), indent(depth+1), i.Args.ASTString(depth+1))
 }
 

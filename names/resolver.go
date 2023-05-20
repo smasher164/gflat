@@ -465,7 +465,7 @@ func resolve(env *Env, n parser.Node) parser.Node {
 		return n
 	case parser.ImportDecl:
 	case parser.ImportDeclPackage:
-	case parser.Where:
+	case parser.With:
 	case parser.ImplDecl:
 	case parser.ArrayType:
 	case parser.NillableType:

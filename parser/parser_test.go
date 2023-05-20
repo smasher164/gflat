@@ -126,7 +126,8 @@ func Test(t *testing.T) {
 			// type Maybe 't = 't?
 			// `),
 			Data: []byte(`
-			1 + 2 * 3 ** 4
+			let foo(x: 'X, y: fun 'Y -> 'Z) with ('X, 'Y, 'Z)
+			id x with int
 			`),
 		}})
 	if err != nil {

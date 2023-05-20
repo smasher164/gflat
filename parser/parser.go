@@ -252,7 +252,7 @@ func (p *parser) parseFunctionSignature() FunctionSignature {
 		if p.tok.Type == lexer.Colon {
 			param.Colon = p.tok
 			p.next()
-			param.Type = p.parseTypeBodyWithoutWhere(false, false, false)
+			param.Type = p.parseTypeBodyWithoutWith(false, false, false)
 		}
 		fun.Param = param
 	} else if p.tok.Type == lexer.LeftParen {
@@ -264,11 +264,11 @@ func (p *parser) parseFunctionSignature() FunctionSignature {
 		var arrow Arrow
 		arrow.Arrow = p.tok
 		p.next()
-		arrow.Type = p.parseTypeBodyWithoutWhere(false, false, false)
+		arrow.Type = p.parseTypeBodyWithoutWith(false, false, false)
 		fun.Arrows = append(fun.Arrows, arrow)
 	}
-	if p.tok.Type == lexer.Where {
-		fun.Where = p.tok
+	if p.tok.Type == lexer.With {
+		fun.With = p.tok
 		p.next()
 		fun.Clause = p.parseTypeBody(false, true, false)
 	}
@@ -444,8 +444,8 @@ func (p *parser) parseBinaryExpr(minPrec int) Node {
 		switch op.Type {
 		case lexer.Colon:
 			rhs = p.parseTypeBody(false, false, false)
-		case lexer.Where:
-			rhs = p.parseWhereClause()
+		case lexer.With:
+			rhs = p.parseWithClause()
 		default:
 			rhs = p.parseBinaryExpr(nextMinPrec)
 		}
@@ -479,10 +479,10 @@ func (p *parser) parseBinaryExpr(minPrec int) Node {
 // 	return ta
 // }
 
-// parses the expression where clause where you can specialize types in an expression.
-// e.g. foo (2, 3) where 'a = int or foo (2, 3) where ('a = int, 'b = int)
-func (p *parser) parseWhereClause() Node {
-	defer p.trace("parseWhereClause")()
+// parses the expression with clause where you can specialize types in an expression.
+// e.g. foo (2, 3) with 'a = int or foo (2, 3) with ('a = int, 'b = int)
+func (p *parser) parseWithClause() Node {
+	defer p.trace("parseWithClause")()
 	return p.parseTypeBody(false, false, true)
 
 	// if p.tok.Type == lexer.SingleQuote {
@@ -1349,7 +1349,7 @@ func (p *parser) parseTypeBodyWithoutQuestionMark(parseSumType, parseConstraint,
 	}
 }
 
-func (p *parser) parseTypeBodyWithoutWhere(parseSumType, parseConstraint, parseAssignment bool) Node {
+func (p *parser) parseTypeBodyWithoutWith(parseSumType, parseConstraint, parseAssignment bool) Node {
 	t := p.parseTypeBodyWithoutQuestionMark(parseSumType, parseConstraint, parseAssignment)
 	// parse nillable type
 	if p.tok.Type == lexer.QuestionMark {
@@ -1366,20 +1366,20 @@ func (p *parser) parseTypeBodyWithoutWhere(parseSumType, parseConstraint, parseA
 // TODO: TypeBody should have one sum case, and if it sees a |, it should parse more cases.
 func (p *parser) parseTypeBody(parseSumType, parseConstraint, parseAssignment bool) Node {
 	defer p.trace("parseTypeBody")()
-	tb := p.parseTypeBodyWithoutWhere(parseSumType, parseConstraint, parseAssignment)
-	if p.tok.Type == lexer.Where {
+	tb := p.parseTypeBodyWithoutWith(parseSumType, parseConstraint, parseAssignment)
+	if p.tok.Type == lexer.With {
 		if parseAssignment {
-			panic("where clauses are not allowed in type assignments")
+			panic("with clauses are not allowed in type assignments")
 		}
-		where := p.tok
+		with := p.tok
 		p.next()
-		// where clause is just a comma-delimited list of type bodies.
+		// with clause is just a comma-delimited list of type bodies.
 		// might have to restrict it to everything but sums
 		// typeConstraint := p.parseTupleTypeConstraint(false)
 		typeConstraint := p.parseTypeBody(false, true, false)
-		return Where{
+		return With{
 			TypeBody: tb,
-			Where:    where,
+			With:     with,
 			Clause:   typeConstraint,
 		}
 	}
@@ -1477,12 +1477,12 @@ func (p *parser) parseFunctionType(parseConstraint bool) Node {
 	var fun FunctionType
 	fun.Fun = p.tok
 	p.next()
-	fun.Param = p.parseTypeBodyWithoutWhere(false, parseConstraint, false)
+	fun.Param = p.parseTypeBodyWithoutWith(false, parseConstraint, false)
 	for p.tok.Type == lexer.RightArrow {
 		var arrow Arrow
 		arrow.Arrow = p.tok
 		p.next()
-		arrow.Type = p.parseTypeBodyWithoutWhere(false, parseConstraint, false)
+		arrow.Type = p.parseTypeBodyWithoutWith(false, parseConstraint, false)
 		fun.Arrows = append(fun.Arrows, arrow)
 	}
 	return fun
@@ -1596,9 +1596,9 @@ func (p *parser) parseImplDecl() Node {
 	impl := ImplDecl{Impl: p.tok}
 	p.next()
 	impl.Name = p.parseTypeName()
-	impl.Args = p.parseTypeBodyWithoutWhere(false, false, true)
-	if p.tok.Type == lexer.Where {
-		impl.Where = p.tok
+	impl.Args = p.parseTypeBodyWithoutWith(false, false, true)
+	if p.tok.Type == lexer.With {
+		impl.With = p.tok
 		p.next()
 		impl.Clause = p.parseTypeBody(false, true, false)
 	}
