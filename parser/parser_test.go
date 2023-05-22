@@ -125,9 +125,14 @@ func Test(t *testing.T) {
 			// Data: []byte(`
 			// type Maybe 't = 't?
 			// `),
+			// Data: []byte(`
+			// let foo(x: 'X, y: fun 'Y -> 'Z) with ('X, 'Y, 'Z)
+			// id x with int
+			// `),
 			Data: []byte(`
-			let foo(x: 'X, y: fun 'Y -> 'Z) with ('X, 'Y, 'Z)
-			id x with int
+			if (x)
+			| Maybe.Some.Foo x => x
+			| Maybe.None => 0
 			`),
 		}})
 	if err != nil {

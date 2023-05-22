@@ -755,6 +755,27 @@ func (p *parser) parseGuard() Node {
 	return guard
 }
 
+func (p *parser) parseTag() Node {
+	defer p.trace("parseTag")()
+	var tag Node = Ident{Name: p.tok}
+	p.next()
+	for p.tok.Type == lexer.Period {
+		period := p.tok
+		p.next()
+		if p.tok.Type != lexer.Ident {
+			panic("missing identifier")
+		}
+		ident := Ident{Name: p.tok}
+		p.next()
+		tag = SelectorExpr{
+			X:      tag,
+			Period: period,
+			Name:   ident,
+		}
+	}
+	return tag
+}
+
 // Pattern = Literal | Ident | TuplePattern
 // | Pattern "|" Pattern | Constructor [ Pattern ]
 // | Pattern ":" TypeBody
@@ -765,8 +786,7 @@ func (p *parser) parsePattern() Node {
 	var tag Node
 	var pat Node
 	if p.tok.Type == lexer.Ident {
-		tag = Ident{Name: p.tok}
-		p.next()
+		tag = p.parseTag()
 	}
 	switch p.tok.Type {
 	case lexer.Ident:

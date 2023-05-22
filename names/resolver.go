@@ -7,7 +7,12 @@ import (
 	"github.com/smasher164/gflat/parser"
 )
 
-// Var is a Node that points into a Scope object.
+var (
+	_ parser.Node = Var{}
+	_ parser.Node = Cons{}
+)
+
+// Var is a variable Node that points into a Scope object.
 type Var struct {
 	OriginalIdent parser.Node
 	// Reference to environment here.
@@ -26,29 +31,58 @@ func (v Var) Span() lexer.Span {
 	return v.OriginalIdent.Span()
 }
 
+// Cons is a constructor Node that points into a Scope object.
 type Cons struct {
 	OriginalIdent parser.Node
 	// Reference to environment here.
 	Env *Env
 }
 
-var _ parser.Node = Var{}
+func (c Cons) ASTString(depth int) string {
+	return fmt.Sprintf("Cons: %s", c.OriginalIdent.ASTString(depth))
+}
+
+func (c Cons) LeadingTrivia() []lexer.Token {
+	return c.OriginalIdent.LeadingTrivia()
+}
+
+func (c Cons) Span() lexer.Span {
+	return c.OriginalIdent.Span()
+}
 
 type Definition struct {
 	Def       parser.Node
 	Ctx       parser.Node         // additional context for error messages
 	IsForward bool                // is this a forward declaration?
 	Undefined map[string]struct{} // if function or type that references undefined symbols, we can track them here.
+	// Children  map[string]parser.Node
+}
+
+func NewDefinition(def, ctx parser.Node, isForward bool) Definition {
+	return Definition{
+		Def:       def,
+		Ctx:       ctx,
+		IsForward: isForward,
+		Undefined: make(map[string]struct{}),
+		// Children:  make(map[string]parser.Node),
+	}
 }
 
 type Env struct {
 	parent *Env
-	// may need multiple tables for different kinds of symbols. i.e. packages, types, bindings.
-	symbols map[string]Definition
+	// may need multiple tables for different kinds of symbols. i.e. packages, types, symbols.
+	// packages map[string]Definition
+	// types    map[string]Definition
+	symbols map[string]Definition // we're gonna share the same symbol table for all symbols.
 }
 
 func (e *Env) AddScope() *Env {
-	return &Env{parent: e, symbols: make(map[string]Definition)}
+	return &Env{
+		parent: e,
+		// packages: make(map[string]Definition),
+		// types:    make(map[string]Definition),
+		symbols: make(map[string]Definition),
+	}
 }
 
 func (e *Env) AddSymbol(name string, d Definition) *Env {
@@ -87,6 +121,15 @@ func Resolve(n parser.Node) parser.Node {
 	return resolve(Universe.AddScope(), n)
 }
 
+// should this be a method on Env?
+// func Select(x parser.Node, sel parser.Node) parser.Node {
+// 	visit(x, func(n parser.Node, rec visitorRec) (parser.Node, bool) {
+// 		switch n := n.(type) {
+// 		case parser.Tuple:
+// 		}
+// 	})
+// }
+
 func defineDestructure(env *Env, n, ctx parser.Node, f func(string)) parser.Node {
 	switch n := n.(type) {
 	case parser.Ident:
@@ -110,7 +153,7 @@ func defineDestructure(env *Env, n, ctx parser.Node, f func(string)) parser.Node
 			return parser.Illegal{Node: localDef.Def, Msg: fmt.Sprintf("%s was already defined", id)}
 		}
 		v := Var{OriginalIdent: n, Env: env}
-		env.AddSymbol(id, Definition{Def: v, Ctx: ctx, IsForward: isForward, Undefined: make(map[string]struct{})}) // Does this correspond to our logic?
+		env.AddSymbol(id, NewDefinition(v, ctx, isForward)) // Does this correspond to our logic?
 		return v
 	// patterns should be handled by looking up the ident and seeing it's a Cons instead of a Var.
 	// case parser.Pattern:
@@ -340,7 +383,7 @@ func resolve(env *Env, n parser.Node) parser.Node {
 		n.Signature = resolve(env, n.Signature)
 		sig := n.Signature.(parser.FunctionSignature)
 		// Add function name to scope. But allow it to get shadowed.
-		fnNameScope := env.AddScope().AddSymbol(id, Definition{Def: n.Name, Ctx: n, Undefined: make(map[string]struct{})})
+		fnNameScope := env.AddScope().AddSymbol(id, NewDefinition(n.Name, n, false))
 		bodyScope := fnNameScope.AddScope()
 		sig.Param = defineDestructure(bodyScope, sig.Param, sig, func(id string) {})
 		n.Signature = sig
@@ -358,7 +401,7 @@ func resolve(env *Env, n parser.Node) parser.Node {
 		n.Signature = resolve(env, n.Signature)
 		sig := n.Signature.(parser.FunctionSignature)
 		// Add function name to scope. But allow it to get shadowed.
-		fnNameScope := env.AddScope().AddSymbol(id, Definition{Def: n.Name, Ctx: n, Undefined: make(map[string]struct{})})
+		fnNameScope := env.AddScope().AddSymbol(id, NewDefinition(n.Name, n, false))
 		bodyScope := fnNameScope.AddScope()
 		sig.Param = defineDestructure(bodyScope, sig.Param, sig, func(id string) {})
 		n.Signature = sig
@@ -429,6 +472,12 @@ func resolve(env *Env, n parser.Node) parser.Node {
 		// 	//
 		// })
 	case parser.TypeDecl:
+		// id := n.Name.(parser.Ident).Name.Data
+		// TODO: deal with type params
+		// TODO: deal with mutual recursion
+		n.Name = defineDestructure(env, n.Name, n, func(string) {})
+		bodyScope := env.AddScope()
+		n.Body = resolve(bodyScope, n.Body)
 	case parser.Number:
 	case parser.NamedTypeParameter:
 	case parser.NamedTypeArgument:
@@ -457,6 +506,9 @@ func resolve(env *Env, n parser.Node) parser.Node {
 		n.X = resolve(env, n.X)
 		return n
 	case parser.SelectorExpr:
+		n.X = resolve(env, n.X)
+		n.Name = Select(n.X, n.Name)
+		return n
 	case parser.StringPart:
 	case parser.String:
 	case parser.IndexExpr:
