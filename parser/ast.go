@@ -29,7 +29,7 @@ var (
 	_ Node = Arrow{}
 	_ Node = LetFunction{}
 	_ Node = Function{}
-	_ Node = TupleElement{}
+	_ Node = CommaElement{}
 	_ Node = Tuple{}
 	_ Node = LetDecl{}
 	_ Node = VarDecl{}
@@ -185,6 +185,7 @@ type Package struct {
 	Name         string
 	PackageFiles []Node
 	ScriptFiles  []Node
+	Imports      map[string]struct{}
 }
 
 func (p Package) ASTString(depth int) string {
@@ -536,24 +537,24 @@ func (f Function) ASTString(depth int) string {
 		indent(depth+1), f.Fun, indent(depth+1), f.Name.ASTString(depth+1), indent(depth+1), f.Signature.ASTString(depth+1), indent(depth+1), f.FatArrow, indent(depth+1), f.Body.ASTString(depth+1))
 }
 
-type TupleElement struct {
+type CommaElement struct {
 	X     Node
 	Comma lexer.Token
 }
 
-func (t TupleElement) ASTString(depth int) string {
+func (t CommaElement) ASTString(depth int) string {
 	return fmt.Sprintf(
-		"TupleElement\n%sX: %s\n%sComma: %s",
+		"CommaElement\n%sX: %s\n%sComma: %s",
 		indent(depth+1),
 		t.X.ASTString(depth+1), indent(depth+1),
 		t.Comma)
 }
 
-func (t TupleElement) LeadingTrivia() []lexer.Token {
+func (t CommaElement) LeadingTrivia() []lexer.Token {
 	return leadingTriviaOf(t.X)
 }
 
-func (t TupleElement) Span() lexer.Span {
+func (t CommaElement) Span() lexer.Span {
 	return spanOf(t.X).Add(t.Comma.Span)
 }
 
@@ -1123,10 +1124,10 @@ AnnotatedDestructure{
 */
 
 type IndexExpr struct {
-	X            Node
-	LeftBracket  lexer.Token
-	Index        Node
-	RightBracket lexer.Token
+	X             Node
+	LeftBracket   lexer.Token
+	IndexElements []Node
+	RightBracket  lexer.Token
 }
 
 func (i IndexExpr) LeadingTrivia() []lexer.Token {
@@ -1138,7 +1139,7 @@ func (i IndexExpr) Span() lexer.Span {
 }
 
 func (i IndexExpr) ASTString(depth int) string {
-	return fmt.Sprintf("IndexExpr\n%sX: %s\n%sLeftBracket: %s\n%sIndex: %s\n%sRightBracket: %s", indent(depth+1), i.X.ASTString(depth+1), indent(depth+1), i.LeftBracket, indent(depth+1), i.Index.ASTString(depth+1), indent(depth+1), i.RightBracket)
+	return fmt.Sprintf("IndexExpr\n%sX: %s\n%sLeftBracket: %s\n%sIndexElements: %s\n%sRightBracket: %s", indent(depth+1), i.X.ASTString(depth+1), indent(depth+1), i.LeftBracket, indent(depth+1), printNodeSlice(depth+1, i.IndexElements), indent(depth+1), i.RightBracket)
 }
 
 type ImportDecl struct {

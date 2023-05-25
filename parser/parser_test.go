@@ -156,10 +156,13 @@ func TestFile(t *testing.T) {
 			// let foo(x: 'X, y: fun 'Y -> 'Z) with ('X, 'Y, 'Z)
 			// id x with int
 			// `),
+			// Data: []byte(`
+			// if (x)
+			// | Maybe.Some.Foo x => x
+			// | Maybe.None => 0
+			// `),
 			Data: []byte(`
-			if (x)
-			| Maybe.Some.Foo x => x
-			| Maybe.None => 0
+			import (Foo[bar, baz]) = "github.com/someone/math"
 			`),
 		},
 	}

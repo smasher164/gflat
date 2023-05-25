@@ -140,6 +140,7 @@ func ParsePackage(fsys fs.FS, filenames ...string) (Node, error) {
 	if len(pkg.PackageFiles) > 0 && pkg.Name == "" {
 		return nil, fmt.Errorf("package name not found")
 	}
+	pkg.Imports = make(map[string]struct{})
 	return pkg, first
 }
 
@@ -432,13 +433,20 @@ func (p *parser) parsePrimaryExpr() Node {
 		p.shouldInsertDelimAfter(false)
 		p.next()
 		var index IndexExpr
-		i := p.parseExpr()
+		index.X = x
+		index.LeftBracket = p.tok
+		for p.tok.Type != lexer.RightBracket && p.tok.Type != lexer.EOF {
+			var elem CommaElement
+			elem.X = p.parseExpr()
+			if p.tok.Type == lexer.Comma {
+				elem.Comma = p.tok
+				p.next()
+			}
+			index.IndexElements = append(index.IndexElements, elem)
+		}
 		if p.tok.Type != lexer.RightBracket {
 			panic("expected ]")
 		}
-		index.X = x
-		index.LeftBracket = p.tok
-		index.Index = i
 		index.RightBracket = p.tok
 		p.shouldInsertDelimAfter(shouldInsert, toksToCheck...)
 		p.next()
@@ -664,7 +672,7 @@ func (p *parser) parseTupleDestructure() Node {
 	p.next()
 	var elems []Node
 	for p.tok.Type != lexer.RightParen && p.tok.Type != lexer.EOF {
-		var elem TupleElement
+		var elem CommaElement
 		elem.X = p.parseDestructure()
 		if p.tok.Type == lexer.Comma {
 			elem.Comma = p.tok
@@ -879,7 +887,7 @@ func (p *parser) parseTuplePattern() Node {
 	tuple.LeftParen = p.tok
 	p.next()
 	for p.tok.Type != lexer.RightParen && p.tok.Type != lexer.EOF {
-		var elem TupleElement
+		var elem CommaElement
 		if p.tok.Type == lexer.Ident && p.peek().Type == lexer.Equals {
 			id := p.tok
 			p.next()
@@ -915,7 +923,7 @@ func (p *parser) parseTuple() Node {
 	tuple.LeftParen = p.tok
 	p.next()
 	for p.tok.Type != lexer.RightParen && p.tok.Type != lexer.EOF {
-		var elem TupleElement
+		var elem CommaElement
 		elem.X = p.parseExpr()
 		if p.tok.Type == lexer.Comma {
 			elem.Comma = p.tok
@@ -932,6 +940,68 @@ func (p *parser) parseTuple() Node {
 	return tuple
 }
 
+// An Import tuple is a tuple with idents, where each ident can be an IndexExpr,
+// and the contents of the index contains comma-delimited idents.
+func (p *parser) parseImportTuple() Node {
+	defer p.trace("parseImportTuple")()
+	shouldInsert := p.shouldInsertAfter
+	toksToCheck := p.afterToksToCheck
+	p.shouldInsertDelimAfter(false)
+	var tuple Tuple
+	tuple.LeftParen = p.tok
+	p.next()
+	for p.tok.Type != lexer.RightParen && p.tok.Type != lexer.EOF {
+		var elem CommaElement
+		if p.tok.Type != lexer.Ident {
+			panic("expected identifier")
+		}
+		elem.X = Ident{Name: p.tok}
+		p.next()
+		for p.tok.Type == lexer.LeftBracket {
+			elem.X = p.parseImportIndexExpr(elem.X)
+		}
+		if p.tok.Type == lexer.Comma {
+			elem.Comma = p.tok
+			p.next()
+		}
+		tuple.Elements = append(tuple.Elements, elem)
+	}
+	if p.tok.Type != lexer.RightParen {
+		panic("missing right paren")
+	}
+	tuple.RightParen = p.tok
+	p.shouldInsertDelimAfter(shouldInsert, toksToCheck...)
+	p.next()
+	return tuple
+}
+
+func (p *parser) parseImportIndexExpr(x Node) Node {
+	defer p.trace("parseImportIndexExpr")()
+	var index IndexExpr
+	index.X = x
+	index.LeftBracket = p.tok
+	p.next()
+	for p.tok.Type != lexer.RightBracket && p.tok.Type != lexer.EOF {
+		if p.tok.Type != lexer.Ident {
+			panic("expected identifier")
+		}
+		var elem CommaElement
+		elem.X = Ident{Name: p.tok}
+		p.next()
+		if p.tok.Type == lexer.Comma {
+			elem.Comma = p.tok
+			p.next()
+		}
+		index.IndexElements = append(index.IndexElements, elem)
+	}
+	if p.tok.Type != lexer.RightBracket {
+		panic("missing right bracket")
+	}
+	index.RightBracket = p.tok
+	p.next()
+	return index
+}
+
 func (p *parser) parseIdentTuple() Node {
 	defer p.trace("parseIdentTuple")()
 	shouldInsert := p.shouldInsertAfter
@@ -941,7 +1011,7 @@ func (p *parser) parseIdentTuple() Node {
 	tuple.LeftParen = p.tok
 	p.next()
 	for p.tok.Type != lexer.RightParen && p.tok.Type != lexer.EOF {
-		var elem TupleElement
+		var elem CommaElement
 		if p.tok.Type != lexer.Ident {
 			panic("expected identifier")
 		}
@@ -1055,7 +1125,7 @@ func (p *parser) parseTupleTypeConstraint(parseAssignment bool) Node {
 		tuple.LeftParen = p.tok
 		p.next()
 		for p.tok.Type != lexer.RightParen && p.tok.Type != lexer.EOF {
-			var elem TupleElement
+			var elem CommaElement
 
 			// 			equals := p.tok
 			// p.next()
@@ -1237,7 +1307,7 @@ func (p *parser) parseTupleTypeParameter() Node {
 	tuple.LeftParen = p.tok
 	p.next()
 	for p.tok.Type != lexer.RightParen && p.tok.Type != lexer.EOF {
-		var elem TupleElement
+		var elem CommaElement
 		elem.X = p.parseTypeParameter(false)
 		if p.tok.Type == lexer.Comma {
 			elem.Comma = p.tok
@@ -1483,7 +1553,7 @@ func (p *parser) parseTupleType() Node {
 	p.next()
 	var elems []Node
 	for p.tok.Type != lexer.RightParen && p.tok.Type != lexer.EOF {
-		var elem TupleElement
+		var elem CommaElement
 		p.shouldInsertDelimAfter(true, lexer.TypeArg)
 		switch p.tok.Type {
 		case lexer.Ident:
@@ -1572,7 +1642,8 @@ func (p *parser) parseImportDeclPackage() Node {
 		}
 	case lexer.LeftParen:
 		// tuple of identifiers
-		tup := p.parseIdentTuple()
+		// tup := p.parseIdentTuple()
+		tup := p.parseImportTuple()
 		if p.tok.Type != lexer.Equals {
 			panic("missing equals")
 		}
@@ -1601,7 +1672,7 @@ func (p *parser) parseImportDeclBlock() Node {
 	tuple.LeftParen = p.tok
 	p.next()
 	for p.tok.Type != lexer.RightParen && p.tok.Type != lexer.EOF {
-		var elem TupleElement
+		var elem CommaElement
 		elem.X = p.parseImportDeclPackage()
 		if p.tok.Type == lexer.Comma {
 			elem.Comma = p.tok
@@ -1638,7 +1709,7 @@ func (p *parser) parseImportDecl() Node {
 		switch p.peek().Type {
 		case lexer.Ident:
 			switch p.peek2().Type {
-			case lexer.Comma, lexer.RightParen:
+			case lexer.Comma, lexer.RightParen, lexer.LeftBracket:
 				importDecl.Package = p.parseImportDeclPackage()
 				return importDecl
 			}

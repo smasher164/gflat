@@ -88,13 +88,13 @@ func (c Cons) Span() lexer.Span {
 	return c.OriginalIdent.Span()
 }
 
+// TODO: turn this into an interface so that the typechecker can extend it.
 type Definition struct {
 	Def       parser.Node
 	Ctx       parser.Node         // additional context for error messages
 	IsForward bool                // is this a forward declaration?
 	Undefined map[string]struct{} // if function or type that references undefined symbols, we can track them here.
-	// Children  map[string]parser.Node // will this duplicate logic for typechecking?
-	Child *Env
+	Child     *Env
 }
 
 func NewDefinition(def, ctx parser.Node, isForward bool) Definition {
@@ -103,15 +103,11 @@ func NewDefinition(def, ctx parser.Node, isForward bool) Definition {
 		Ctx:       ctx,
 		IsForward: isForward,
 		Undefined: make(map[string]struct{}),
-		// Children:  make(map[string]parser.Node),
 	}
 }
 
 type Env struct {
-	parent *Env
-	// may need multiple tables for different kinds of symbols. i.e. packages, types, symbols.
-	// packages map[string]Definition
-	// types    map[string]Definition
+	parent  *Env
 	symbols map[string]Definition // we're gonna share the same symbol table for all symbols.
 }
 
@@ -301,7 +297,7 @@ func defineDestructure(env *Env, n, ctx parser.Node, f func(string)) parser.Node
 			n.Elements[i] = defineDestructure(env, n.Elements[i], ctx, f)
 		}
 		return n
-	case parser.TupleElement:
+	case parser.CommaElement:
 		return defineDestructure(env, n.X, ctx, f)
 	case parser.TypeAnnotation:
 		panic("todo")
@@ -385,7 +381,7 @@ func visit1(n parser.Node, f visitorFunc) (parser.Node, bool) {
 			}
 		}
 		return n, quit
-	case parser.TupleElement:
+	case parser.CommaElement:
 		n.X, quit = f(n.X, rec)
 		return n, quit
 	case parser.CallExpr:
@@ -629,7 +625,7 @@ func resolve(env *Env, n parser.Node) parser.Node {
 		n.Body = resolve(bodyScope, n.Body)
 		setIllegals(env, id, n.Body)
 		return n
-	case parser.TupleElement:
+	case parser.CommaElement:
 		n.X = resolve(env, n.X)
 		return n
 	case parser.Tuple:
@@ -768,11 +764,19 @@ func resolve(env *Env, n parser.Node) parser.Node {
 	case parser.StringPart:
 	case parser.String:
 	case parser.IndexExpr:
+		// TODO: imports
 		n.X = resolve(env, n.X)
-		n.Index = resolve(env, n.Index)
+		for i := range n.IndexElements {
+			n.IndexElements[i] = resolve(env, n.IndexElements[i])
+		}
 		return n
 	case parser.ImportDecl:
+		n.Package = resolve(env, n.Package)
 	case parser.ImportDeclPackage:
+		switch bind := n.Binding.(type) {
+		case parser.Ident:
+		case parser.Tuple:
+		}
 	case parser.With:
 	case parser.ImplDecl:
 	case parser.ArrayType:
