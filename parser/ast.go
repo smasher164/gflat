@@ -62,6 +62,7 @@ var (
 	_ Node = ImplDecl{}
 	_ Node = ArrayType{}
 	_ Node = NillableType{}
+	_ Node = Package{}
 )
 
 func spanOf(n any) lexer.Span {
@@ -151,16 +152,16 @@ func (s Stmt) Span() lexer.Span {
 func (f File) ASTString(depth int) string {
 	if f.Package.Type == lexer.Package {
 		return fmt.Sprintf(
-			"%sFile\n%sPackage: %s\n%sPackageName: %s\n%sBody: %s\n%sTrailingTrivia: %v",
-			indent(depth), indent(depth+1),
+			"File\n%sPackage: %s\n%sPackageName: %s\n%sBody: %s\n%sTrailingTrivia: %v",
+			indent(depth+1),
 			f.Package, indent(depth+1),
 			f.PackageName.ASTString(depth+1), indent(depth+1),
 			f.Body.ASTString(depth+1), indent(depth+1),
 			f.trailingTrivia)
 	}
 	return fmt.Sprintf(
-		"%sFile\n%sBody: %s\n%sTrailingTrivia: %v",
-		indent(depth), indent(depth+1),
+		"File\n%sBody: %s\n%sTrailingTrivia: %v",
+		indent(depth+1),
 		f.Body.ASTString(depth+1), indent(depth+1),
 		f.trailingTrivia)
 }
@@ -178,6 +179,29 @@ func (f File) Span() lexer.Span {
 
 func (f File) TrailingTrivia() []lexer.Token {
 	return f.trailingTrivia
+}
+
+type Package struct {
+	Name         string
+	PackageFiles []Node
+	ScriptFiles  []Node
+}
+
+func (p Package) ASTString(depth int) string {
+	return fmt.Sprintf(
+		"Package\n%sName: %s\n%sPackageFiles: %s\n%sScriptFiles: %s",
+		indent(depth+1),
+		p.Name, indent(depth+1),
+		printNodeSlice(depth+1, p.PackageFiles), indent(depth+1),
+		printNodeSlice(depth+1, p.ScriptFiles))
+}
+
+func (p Package) LeadingTrivia() []lexer.Token {
+	return nil
+}
+
+func (p Package) Span() lexer.Span {
+	return lexer.Span{}
 }
 
 type Ident struct {
@@ -1099,22 +1123,22 @@ AnnotatedDestructure{
 */
 
 type IndexExpr struct {
-	LeftBracket  lexer.Token
 	X            Node
+	LeftBracket  lexer.Token
 	Index        Node
 	RightBracket lexer.Token
 }
 
 func (i IndexExpr) LeadingTrivia() []lexer.Token {
-	return i.LeftBracket.LeadingTrivia
+	return leadingTriviaOf(i.X)
 }
 
 func (i IndexExpr) Span() lexer.Span {
-	return i.LeftBracket.Span.Add(i.RightBracket.Span)
+	return spanOf(i.X).Add(i.RightBracket.Span)
 }
 
 func (i IndexExpr) ASTString(depth int) string {
-	return fmt.Sprintf("IndexExpr\n%sLeftBracket: %s\n%sX: %s\n%sIndex: %s\n%sRightBracket: %s", indent(depth+1), i.LeftBracket, indent(depth+1), i.X.ASTString(depth+1), indent(depth+1), i.Index.ASTString(depth+1), indent(depth+1), i.RightBracket)
+	return fmt.Sprintf("IndexExpr\n%sX: %s\n%sLeftBracket: %s\n%sIndex: %s\n%sRightBracket: %s", indent(depth+1), i.X.ASTString(depth+1), indent(depth+1), i.LeftBracket, indent(depth+1), i.Index.ASTString(depth+1), indent(depth+1), i.RightBracket)
 }
 
 type ImportDecl struct {

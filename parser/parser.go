@@ -2,6 +2,7 @@ package parser
 
 import (
 	"fmt"
+	"io/fs"
 
 	"github.com/smasher164/gflat/lexer"
 )
@@ -100,8 +101,46 @@ func (p *parser) trace(msg string) func() {
 // 	return f
 // }
 
-func ParseFile(l Lexer) Node {
-	return (&parser{l: l}).parseFile()
+func ParseFile(fsys fs.FS, filename string) (Node, error) {
+	l, err := lexer.NewLexer(fsys, filename)
+	if err != nil {
+		return nil, err
+	}
+	return (&parser{l: l}).parseFile(), nil
+}
+
+func ParsePackage(fsys fs.FS, filenames ...string) (Node, error) {
+	var pkg Package
+	var first error
+	for _, filename := range filenames {
+		file, err := ParseFile(fsys, filename)
+		if err != nil {
+			if first == nil {
+				first = err
+			}
+		} else {
+			if file, ok := file.(File); ok {
+				if file.Package.Type == lexer.Package {
+					pkg.PackageFiles = append(pkg.PackageFiles, file)
+					if name, ok := file.PackageName.(Ident); ok {
+						if pkg.Name == "" {
+							pkg.Name = name.Name.Data
+						} else {
+							if pkg.Name != name.Name.Data {
+								return nil, fmt.Errorf("package name mismatch: %s != %s", pkg.Name, name.Name.Data)
+							}
+						}
+					}
+				} else {
+					pkg.ScriptFiles = append(pkg.ScriptFiles, file)
+				}
+			}
+		}
+	}
+	if len(pkg.PackageFiles) > 0 && pkg.Name == "" {
+		return nil, fmt.Errorf("package name not found")
+	}
+	return pkg, first
 }
 
 func (p *parser) next() {
@@ -397,8 +436,8 @@ func (p *parser) parsePrimaryExpr() Node {
 		if p.tok.Type != lexer.RightBracket {
 			panic("expected ]")
 		}
-		index.LeftBracket = p.tok
 		index.X = x
+		index.LeftBracket = p.tok
 		index.Index = i
 		index.RightBracket = p.tok
 		p.shouldInsertDelimAfter(shouldInsert, toksToCheck...)

@@ -9,6 +9,8 @@ import (
 
 var (
 	_ parser.Node = Var{}
+	_ parser.Node = TypeName{}
+	_ parser.Node = PackageName{}
 	_ parser.Node = Cons{}
 )
 
@@ -28,6 +30,42 @@ func (v Var) LeadingTrivia() []lexer.Token {
 }
 
 func (v Var) Span() lexer.Span {
+	return v.OriginalIdent.Span()
+}
+
+type TypeName struct {
+	OriginalIdent parser.Node
+	// Reference to environment here.
+	Env *Env
+}
+
+func (v TypeName) ASTString(depth int) string {
+	return fmt.Sprintf("TypeName: %s", v.OriginalIdent.ASTString(depth))
+}
+
+func (v TypeName) LeadingTrivia() []lexer.Token {
+	return v.OriginalIdent.LeadingTrivia()
+}
+
+func (v TypeName) Span() lexer.Span {
+	return v.OriginalIdent.Span()
+}
+
+type PackageName struct {
+	OriginalIdent parser.Node
+	// Reference to environment here.
+	Env *Env
+}
+
+func (v PackageName) ASTString(depth int) string {
+	return fmt.Sprintf("PackageName: %s", v.OriginalIdent.ASTString(depth))
+}
+
+func (v PackageName) LeadingTrivia() []lexer.Token {
+	return v.OriginalIdent.LeadingTrivia()
+}
+
+func (v PackageName) Span() lexer.Span {
 	return v.OriginalIdent.Span()
 }
 
@@ -55,7 +93,8 @@ type Definition struct {
 	Ctx       parser.Node         // additional context for error messages
 	IsForward bool                // is this a forward declaration?
 	Undefined map[string]struct{} // if function or type that references undefined symbols, we can track them here.
-	// Children  map[string]parser.Node
+	// Children  map[string]parser.Node // will this duplicate logic for typechecking?
+	Child *Env
 }
 
 func NewDefinition(def, ctx parser.Node, isForward bool) Definition {
@@ -118,17 +157,80 @@ var Universe = &Env{
 // That means we need a var node.
 // We'd like it to be a pointer to a Scope.
 func Resolve(n parser.Node) parser.Node {
-	return resolve(Universe.AddScope(), n)
+	return resolve(Universe, n)
 }
 
 // should this be a method on Env?
-// func Select(x parser.Node, sel parser.Node) parser.Node {
-// 	visit(x, func(n parser.Node, rec visitorRec) (parser.Node, bool) {
-// 		switch n := n.(type) {
-// 		case parser.Tuple:
-// 		}
-// 	})
-// }
+func Select(x parser.Node, sel parser.Node) parser.Node {
+	// switch sel.(type) {
+	// case Var, Cons:
+	// 	return sel
+	// }
+	switch x := x.(type) {
+	case TypeName:
+		id := x.OriginalIdent.(parser.Ident).Name.Data
+		selID := sel.(parser.Ident).Name.Data
+		ch := x.Env.symbols[id].Child.symbols[selID].Def
+		// ch := x.Env.symbols[id].Children[selID]
+		if ch == nil {
+			return parser.Illegal{Node: sel, Msg: fmt.Sprintf("%s is not a member of %s", selID, id)}
+		}
+		return ch
+	case PackageName:
+		panic("todo")
+	case parser.SelectorExpr:
+		return Select(Select(x.X, x.Name), sel)
+	}
+	// TODO: we are not processing tuple access right now. That should be done in type checking.
+	return parser.Illegal{Node: sel, Msg: fmt.Sprintf("cannot select from %T", x)}
+	// visit(x, func(n parser.Node, rec visitorRec) (parser.Node, bool) {
+	// 	switch n := n.(type) {
+	// 	case parser.Tuple:
+	// 	}
+	// })
+}
+
+func defineType(env *Env, nd, ctx parser.Node) parser.Node {
+	n, ok := nd.(parser.Ident)
+	if !ok {
+		panic("unreachable")
+	}
+	id := n.Name.Data
+	if id == "_" {
+		return n
+	}
+	isForward := false
+	if typeDecl, ok := ctx.(parser.TypeDecl); ok {
+		isForward = typeDecl.Body == nil
+	}
+	if localDef, ok := env.LookupLocal(id); ok {
+		// we don't allow shadowing in local scope
+		if localDef.IsForward && !isForward {
+			return localDef.Def
+		}
+		return parser.Illegal{Node: localDef.Def, Msg: fmt.Sprintf("%s was already defined", id)}
+	}
+	t := TypeName{OriginalIdent: n, Env: env}
+	env.AddSymbol(id, NewDefinition(t, ctx, isForward)) // Does this correspond to our logic?
+	return t
+}
+
+func defineTag(env *Env, nd, ctx parser.Node) parser.Node {
+	n, ok := nd.(parser.Ident)
+	if !ok {
+		panic("unreachable")
+	}
+	id := n.Name.Data
+	if id == "_" {
+		return n
+	}
+	if localDef, ok := env.LookupLocal(id); ok {
+		return parser.Illegal{Node: localDef.Def, Msg: fmt.Sprintf("%s was already defined", id)}
+	}
+	c := Cons{OriginalIdent: n, Env: env}
+	env.AddSymbol(id, NewDefinition(c, ctx, false)) // Does this correspond to our logic?
+	return c
+}
 
 func defineDestructure(env *Env, n, ctx parser.Node, f func(string)) parser.Node {
 	switch n := n.(type) {
@@ -155,6 +257,34 @@ func defineDestructure(env *Env, n, ctx parser.Node, f func(string)) parser.Node
 		v := Var{OriginalIdent: n, Env: env}
 		env.AddSymbol(id, NewDefinition(v, ctx, isForward)) // Does this correspond to our logic?
 		return v
+	case parser.CallExpr:
+		// assuming this is a pattern case
+		n.Elements[0] = resolve(env, n.Elements[0])
+		if tag, ok := n.Elements[0].(parser.SelectorExpr); ok {
+			if _, ok := tag.Name.(Cons); ok {
+				n.Elements[1] = defineDestructure(env, n.Elements[1], ctx, f)
+			}
+		}
+		return n
+		// switch tag := tag.(type) {
+		// case parser.SelectorExpr:
+		// 	if tag.Name
+		// case Cons:
+		// 	n.Elements[1] = defineDestructure(env, pat, ctx, f)
+		// 	return n
+		// }
+	case Cons:
+		return n
+	case parser.SelectorExpr:
+		if _, ok := n.Name.(Cons); ok {
+			return n
+		}
+		return defineDestructure(env, resolve(env, n), ctx, f)
+		// assuming this is a pattern case
+		// n.X = resolve(env, n.X)
+		// switch x := n.X.(type) {
+		// case Cons:
+		// }
 	// patterns should be handled by looking up the ident and seeing it's a Cons instead of a Var.
 	// case parser.Pattern:
 	// 	switch p := n.X.(type) {
@@ -307,6 +437,9 @@ func visit1(n parser.Node, f visitorFunc) (parser.Node, bool) {
 	case parser.PostfixExpr:
 		n.X, quit = f(n.X, rec)
 		return n, quit
+	case parser.IfHeader:
+		n.Cond, quit = f(n.Cond, rec)
+		return n, quit
 	case parser.If:
 		if n.IfHeader, quit = f(n.IfHeader, rec); quit {
 			return n, quit
@@ -322,6 +455,51 @@ func visit1(n parser.Node, f visitorFunc) (parser.Node, bool) {
 		}
 		n.ElseBody, quit = f(n.ElseBody, rec)
 		return n, quit
+	case parser.IfMatch:
+		if n.IfHeader, quit = f(n.IfHeader, rec); quit {
+			return n, quit
+		}
+		for i := range n.Cases {
+			if n.Cases[i], quit = f(n.Cases[i], rec); quit {
+				return n, quit
+			}
+		}
+		return n, quit
+	case parser.PatternCase:
+		if n.Pattern, quit = f(n.Pattern, rec); quit {
+			return n, quit
+		}
+		if n.Guard, quit = f(n.Guard, rec); quit {
+			return n, quit
+		}
+		n.Expr, quit = f(n.Expr, rec)
+		return n, quit
+	case parser.TypeDecl:
+		if n.Name, quit = f(n.Name, rec); quit {
+			return n, quit
+		}
+		// ignoring type params for now
+		n.Body, quit = f(n.Body, rec)
+		return n, quit
+	case parser.SumType:
+		for i := range n.Elements {
+			if n.Elements[i], quit = f(n.Elements[i], rec); quit {
+				return n, quit
+			}
+		}
+		return n, quit
+	case parser.SumTypeElement:
+		if n.Name, quit = f(n.Name, rec); quit {
+			return n, quit
+		}
+		n.Type, quit = f(n.Type, rec)
+		return n, quit
+	case parser.SelectorExpr:
+		if n.X, quit = f(n.X, rec); quit {
+			return n, quit
+		}
+		n.Name, quit = f(n.Name, rec)
+		return n, quit
 	default:
 		return f(n, rec)
 	}
@@ -333,6 +511,13 @@ func visit(n parser.Node, f visitorFunc) parser.Node {
 	return n
 }
 
+// This is basically like Go's top-level top-sort based name resolution, that handles cycles.
+// Completely order independent.
+// Only declarations are allowed with the value restriction. No side effects.
+func resolveTopLevel(env *Env, n parser.Node) parser.Node {
+	panic("TODO")
+}
+
 func resolve(env *Env, n parser.Node) parser.Node {
 	switch n := n.(type) {
 	case parser.BinaryExpr:
@@ -342,7 +527,43 @@ func resolve(env *Env, n parser.Node) parser.Node {
 	case parser.Stmt:
 		n.Stmt = resolve(env, n.Stmt)
 		return n
+	case parser.Package:
+		// introduce package scope
+		packageScope := env.AddScope()
+		for i := range n.PackageFiles {
+			n.PackageFiles[i] = resolveTopLevel(packageScope, n.PackageFiles[i])
+		}
+		for i := range n.ScriptFiles {
+			n.ScriptFiles[i] = resolve(env.AddScope(), n.ScriptFiles[i])
+		}
+		// TODO: resolve cross-file identifiers
+		return n
 	case parser.File:
+		// var packageEnv *Env
+		// if packageName, ok := n.PackageName.(parser.Ident); ok {
+		// 	if packageDef, ok := env.LookupLocal(packageName.Name.Data); ok {
+		// 		n.PackageName = packageDef.Def
+		// 		packageEnv = packageDef.Child
+		// 	} else {
+		// 		pkg := PackageName{OriginalIdent: packageName, Env: env}
+		// 		packageDef := NewDefinition(pkg, n, false)
+		// 		env.AddSymbol(packageName.Name.Data, packageDef)
+		// 		n.PackageName = pkg
+		// 		packageEnv = env.AddScope()
+		// 		packageDef.Child = packageEnv
+		// 	}
+		// } else if packageDef, ok := env.LookupLocal("main"); ok {
+		// 	n.PackageName = packageDef.Def
+		// 	packageEnv = packageDef.Child
+		// } else {
+		// 	pkgName := parser.Ident{Name: lexer.Token{Type: lexer.Ident, Data: "main"}}
+		// 	pkg := PackageName{OriginalIdent: pkgName, Env: env}
+		// 	packageDef := NewDefinition(pkg, n, false)
+		// 	env.AddSymbol("main", packageDef)
+		// 	n.PackageName = pkg
+		// 	packageEnv = env.AddScope()
+		// 	packageDef.Child = packageEnv
+		// }
 		n.Body = resolve(env, n.Body)
 		return n
 	case parser.Ident:
@@ -457,10 +678,20 @@ func resolve(env *Env, n parser.Node) parser.Node {
 			patternCase := n.Cases[i].(parser.PatternCase)
 			patternScope := env.AddScope()
 			// TODO: defineDestructure for pattern cases needs to consider Cons vs Var.
-			n.Cases[i] = defineDestructure(patternScope, patternCase.Pattern, patternCase, func(id string) {
+
+			// if id, ok := pat.(parser.Ident); ok {
+			// 	if d, ok := patternScope.LookupStack(id.Name.Data); ok {
+			// 		if _, ok := d.Def.(Cons); ok {
+			// 			pat = d.Def
+			// 		}
+			// 	}
+			// }
+			// n.Cases[i] =
+			pat := patternCase.Pattern
+			patternCase = n.Cases[i].(parser.PatternCase)
+			patternCase.Pattern = defineDestructure(patternScope, pat, patternCase, func(id string) {
 				setIllegals(patternScope, id, n.IfHeader)
 			})
-			patternCase = n.Cases[i].(parser.PatternCase)
 			patternCase.Guard = resolve(patternScope, patternCase.Guard)
 			patternCase.Expr = resolve(patternScope, patternCase.Expr)
 			n.Cases[i] = patternCase
@@ -472,19 +703,44 @@ func resolve(env *Env, n parser.Node) parser.Node {
 		// 	//
 		// })
 	case parser.TypeDecl:
-		// id := n.Name.(parser.Ident).Name.Data
 		// TODO: deal with type params
 		// TODO: deal with mutual recursion
-		n.Name = defineDestructure(env, n.Name, n, func(string) {})
+		// n.Name = defineDestructure(env, n.Name, n, func(string) {})
+		id := n.Name.(parser.Ident).Name.Data
+		n.Name = defineType(env, n.Name, n)
 		bodyScope := env.AddScope()
 		n.Body = resolve(bodyScope, n.Body)
+		// copy bodyScope.symbols to def.children
+		// for k, v := range bodyScope.symbols {
+		// 	if sym, ok := env.symbols[id]; ok {
+		// 		sym.Children[k] = v.Def
+		// 	}
+		// }
+		for k, v := range bodyScope.symbols {
+			if sym, ok := env.symbols[id]; ok {
+				if sym.Child == nil {
+					sym.Child = env.AddScope()
+				}
+				sym.Child.symbols[k] = v
+				env.symbols[id] = sym
+			}
+		}
+		return n
+		// setIllegals
 	case parser.Number:
 	case parser.NamedTypeParameter:
 	case parser.NamedTypeArgument:
 	case parser.TypeApplication:
 	case parser.NamedType:
 	case parser.SumType:
+		for i := range n.Elements {
+			n.Elements[i] = resolve(env, n.Elements[i])
+		}
+		return n
 	case parser.SumTypeElement:
+		n.Name = defineTag(env, n.Name, n)
+		n.Type = resolve(env, n.Type)
+		return n
 	case parser.ForallType:
 	case parser.FunctionType:
 	case parser.Field:
@@ -522,6 +778,9 @@ func resolve(env *Env, n parser.Node) parser.Node {
 	case parser.ArrayType:
 	case parser.NillableType:
 	case Var: // is it possible to hit this case?
+	case TypeName:
+	case Cons:
+	case PackageName:
 	}
 	return n
 }
@@ -551,7 +810,7 @@ func resolveIllegals(env *Env, body parser.Node) parser.Node {
 					return n, false
 				}
 			}
-		case Var, parser.Ident, parser.Number, parser.String, parser.StringPart, parser.FunctionSignature:
+		case nil, Var, TypeName, Cons, PackageName, parser.Ident, parser.Number, parser.String, parser.StringPart, parser.FunctionSignature:
 			return n, false
 		}
 		return rec(n)

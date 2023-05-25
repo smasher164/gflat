@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"io"
 	"io/fs"
+	"path/filepath"
 	"sort"
 	"strconv"
 	"unicode"
@@ -608,7 +609,10 @@ func (l *Lexer) ShouldInsertAfter(status bool, toksToCheck []TokenType) {
 	l.afterToksToCheck = toksToCheck
 }
 
-func NewLexer(filename string, fsys fs.FS) (*Lexer, error) {
+func NewLexer(fsys fs.FS, filename string) (*Lexer, error) {
+	if filepath.Ext(filename) != ".gf" {
+		return nil, fmt.Errorf("invalid file extension %q, expected \".gf\"", filepath.Ext(filename))
+	}
 	f, err := fsys.Open(filename)
 	if err != nil {
 		return nil, err

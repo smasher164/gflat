@@ -5,13 +5,40 @@ import (
 	"testing/fstest"
 
 	"github.com/smasher164/gflat/parser"
-
-	"github.com/smasher164/gflat/lexer"
 )
 
-func Test(t *testing.T) {
-	l, err := lexer.NewLexer("test.txt", fstest.MapFS{
-		"test.txt": &fstest.MapFile{
+func TestPackage(t *testing.T) {
+	fsys := fstest.MapFS{
+		"a.gf": &fstest.MapFile{
+			Data: []byte(`
+			package a
+
+			fun f(x) => x
+			`),
+		},
+		"b.gf": &fstest.MapFile{
+			Data: []byte(`
+			package a
+
+			fun f(x) => x
+			`),
+		},
+		"c.gf": &fstest.MapFile{
+			Data: []byte(`
+			print "Hello, World!"
+			`),
+		},
+	}
+	pkg, err := parser.ParsePackage(fsys, "a.gf", "b.gf", "c.gf")
+	if err != nil {
+		t.Fatal(err)
+	}
+	parser.PrintAST(pkg)
+}
+
+func TestFile(t *testing.T) {
+	fsys := fstest.MapFS{
+		"test.gf": &fstest.MapFile{
 			// Data: []byte(`;`),
 			// Data: []byte(`let x = if (true) {
 			// 	1
@@ -134,10 +161,12 @@ func Test(t *testing.T) {
 			| Maybe.Some.Foo x => x
 			| Maybe.None => 0
 			`),
-		}})
+		},
+	}
+	// l, err := lexer.NewLexer(, "test.txt")
+	f, err := parser.ParseFile(fsys, "test.gf")
 	if err != nil {
 		t.Fatal(err)
 	}
-	f := parser.ParseFile(l)
 	parser.PrintAST(f)
 }

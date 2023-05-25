@@ -67,7 +67,7 @@ func TestLexer(t *testing.T) {
 			testfs[name] = &fstest.MapFile{
 				Data: []byte(data),
 			}
-			l, err := NewLexer(name, testfs)
+			l, err := NewLexer(testfs, name)
 			if err != nil {
 				t.Error(err)
 			}
@@ -92,9 +92,9 @@ func TestLexer(t *testing.T) {
 	// 	return
 	// }
 
-	run("empty.txt", "", []Token{single(nil, EOF, Pos{0, 1, 1})})
+	run("empty.gf", "", []Token{single(nil, EOF, Pos{0, 1, 1})})
 
-	run("singlechar.txt", "+ % ^ ~ , ; ? ( ) [ ] ` / - * & | < > = ! : . $", []Token{
+	run("singlechar.gf", "+ % ^ ~ , ; ? ( ) [ ] ` / - * & | < > = ! : . $", []Token{
 		single(nil, Plus, Pos{0, 1, 1}),
 		singleWS(Pos{1, 1, 2}, Remainder, Pos{2, 1, 3}),
 		singleWS(Pos{3, 1, 4}, Caret, Pos{4, 1, 5}),
@@ -122,7 +122,7 @@ func TestLexer(t *testing.T) {
 		single(nil, EOF, Pos{47, 1, 48}),
 	})
 
-	run("doublechar.txt", "-> ** && || <= << <- >= >> == != := ..", []Token{
+	run("doublechar.gf", "-> ** && || <= << <- >= >> == != := ..", []Token{
 		double(nil, RightArrow, Pos{0, 1, 1}),
 		doubleWS(Pos{2, 1, 3}, Exponentiation, Pos{3, 1, 4}),
 		doubleWS(Pos{5, 1, 6}, LogicalAnd, Pos{6, 1, 7}),
@@ -139,7 +139,7 @@ func TestLexer(t *testing.T) {
 		single(nil, EOF, Pos{38, 1, 39}),
 	})
 
-	run("keywords.txt", "fun type trait import let var if else case match package iso ref mut pub", []Token{
+	run("keywords.gf", "fun type trait import let var if else case match package iso ref mut pub", []Token{
 		keyword(nil, Fun, Pos{0, 1, 1}, Pos{2, 1, 3}),
 		keywordWS(Pos{3, 1, 4}, Type, Pos{4, 1, 5}, Pos{7, 1, 8}),
 		keywordWS(Pos{8, 1, 9}, Trait, Pos{9, 1, 10}, Pos{13, 1, 14}),
@@ -158,7 +158,7 @@ func TestLexer(t *testing.T) {
 		single(nil, EOF, Pos{72, 1, 73}),
 	})
 
-	run("identifiers.txt", "_ __ a_b_c a12 अखिल", []Token{
+	run("identifiers.gf", "_ __ a_b_c a12 अखिल", []Token{
 		dataTok(nil, Ident, Pos{0, 1, 1}, "_"),
 		dataTokWS(Pos{1, 1, 2}, Ident, Pos{2, 1, 3}, "__"),
 		dataTokWS(Pos{4, 1, 5}, Ident, Pos{5, 1, 6}, "a_b_c"),
@@ -167,7 +167,7 @@ func TestLexer(t *testing.T) {
 		single(nil, EOF, Pos{19, 1, 20}),
 	})
 
-	run("numbers.txt", "0 1 1.2 0.3 1.2e3 1.2e+3 1.2e-3 0x1 0xFB 0x1.3p1 0b01001 0o777 0o755", []Token{
+	run("numbers.gf", "0 1 1.2 0.3 1.2e3 1.2e+3 1.2e-3 0x1 0xFB 0x1.3p1 0b01001 0o777 0o755", []Token{
 		dataTok(nil, Number, Pos{0, 1, 1}, "0"),
 		dataTokWS(Pos{1, 1, 2}, Number, Pos{2, 1, 3}, "1"),
 		dataTokWS(Pos{3, 1, 4}, Number, Pos{4, 1, 5}, "1.2"),
@@ -184,7 +184,7 @@ func TestLexer(t *testing.T) {
 		single(nil, EOF, Pos{68, 1, 69}),
 	})
 
-	run("strings_simple.txt", `"hello" "a\a\b\f\n\r\t\v\\\"b" "\o255" "\xFE" "\uABCD" "\U0010FFFF"`, []Token{
+	run("strings_simple.gf", `"hello" "a\a\b\f\n\r\t\v\\\"b" "\o255" "\xFE" "\uABCD" "\U0010FFFF"`, []Token{
 		dataTok(nil, String, Pos{0, 1, 1}, `"hello"`),
 		dataTokWS(Pos{7, 1, 8}, String, Pos{8, 1, 9}, `"a\a\b\f\n\r\t\v\\\"b"`),
 		dataTokWS(Pos{30, 1, 31}, String, Pos{31, 1, 32}, `"\o255"`),
@@ -206,7 +206,7 @@ func TestLexer(t *testing.T) {
 		`$$"double {{braces}} and {single}"`,
 	}
 
-	run("strings.txt", strings.Join(stringCases, " "), []Token{
+	run("strings.gf", strings.Join(stringCases, " "), []Token{
 		dataTok(nil, String, Pos{0, 1, 1}, `"this {isn't} interpolated"`),
 		dataTokWS(Pos{27, 1, 28}, StringBeg, Pos{28, 1, 29}, `$"this {`),
 		dataTok(nil, Ident, Pos{36, 1, 37}, "is"),
