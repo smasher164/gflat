@@ -118,6 +118,7 @@ type File struct {
 	PackageName    Node
 	Body           Node
 	trailingTrivia []lexer.Token
+	Imports        map[string]struct{}
 }
 
 func indent(depth int) string {
@@ -152,18 +153,20 @@ func (s Stmt) Span() lexer.Span {
 func (f File) ASTString(depth int) string {
 	if f.Package.Type == lexer.Package {
 		return fmt.Sprintf(
-			"File\n%sPackage: %s\n%sPackageName: %s\n%sBody: %s\n%sTrailingTrivia: %v",
+			"File\n%sPackage: %s\n%sPackageName: %s\n%sBody: %s\n%sTrailingTrivia: %v\n%sImports: %v",
 			indent(depth+1),
 			f.Package, indent(depth+1),
 			f.PackageName.ASTString(depth+1), indent(depth+1),
 			f.Body.ASTString(depth+1), indent(depth+1),
-			f.trailingTrivia)
+			f.trailingTrivia, indent(depth+1),
+			f.Imports)
 	}
 	return fmt.Sprintf(
-		"File\n%sBody: %s\n%sTrailingTrivia: %v",
+		"File\n%sBody: %s\n%sTrailingTrivia: %v\n%sImports: %v",
 		indent(depth+1),
 		f.Body.ASTString(depth+1), indent(depth+1),
-		f.trailingTrivia)
+		f.trailingTrivia, indent(depth+1),
+		f.Imports)
 }
 
 func (f File) LeadingTrivia() []lexer.Token {
@@ -190,11 +193,12 @@ type Package struct {
 
 func (p Package) ASTString(depth int) string {
 	return fmt.Sprintf(
-		"Package\n%sName: %s\n%sPackageFiles: %s\n%sScriptFiles: %s",
+		"Package\n%sName: %s\n%sPackageFiles: %s\n%sScriptFiles: %s\n%sImports: %v",
 		indent(depth+1),
 		p.Name, indent(depth+1),
 		printNodeSlice(depth+1, p.PackageFiles), indent(depth+1),
-		printNodeSlice(depth+1, p.ScriptFiles))
+		printNodeSlice(depth+1, p.ScriptFiles), indent(depth+1),
+		p.Imports)
 }
 
 func (p Package) LeadingTrivia() []lexer.Token {

@@ -2,14 +2,18 @@ package names
 
 import (
 	"fmt"
+	"path"
 
 	"github.com/smasher164/gflat/lexer"
 	"github.com/smasher164/gflat/parser"
+	"golang.org/x/exp/maps"
+	"golang.org/x/mod/module"
 )
 
 var (
 	_ parser.Node = Var{}
 	_ parser.Node = TypeName{}
+	_ parser.Node = UnresolvedIdent{}
 	_ parser.Node = PackageName{}
 	_ parser.Node = Cons{}
 )
@@ -51,6 +55,26 @@ func (v TypeName) Span() lexer.Span {
 	return v.OriginalIdent.Span()
 }
 
+// UnresolvedIdent is an identifier that has not been resolved yet.
+// TODO: change illegals to UnresolvedIdent
+type UnresolvedIdent struct {
+	OriginalIdent parser.Node
+	// Reference to environment here.
+	Env *Env
+}
+
+func (v UnresolvedIdent) ASTString(depth int) string {
+	return fmt.Sprintf("UnknownIdent: %s", v.OriginalIdent.ASTString(depth))
+}
+
+func (v UnresolvedIdent) LeadingTrivia() []lexer.Token {
+	return v.OriginalIdent.LeadingTrivia()
+}
+
+func (v UnresolvedIdent) Span() lexer.Span {
+	return v.OriginalIdent.Span()
+}
+
 type PackageName struct {
 	OriginalIdent parser.Node
 	// Reference to environment here.
@@ -88,21 +112,29 @@ func (c Cons) Span() lexer.Span {
 	return c.OriginalIdent.Span()
 }
 
+type ForwardStatus int
+
+const (
+	NotForward ForwardStatus = iota
+	Forward
+	ForwardResolved
+)
+
 // TODO: turn this into an interface so that the typechecker can extend it.
 type Definition struct {
-	Def       parser.Node
-	Ctx       parser.Node         // additional context for error messages
-	IsForward bool                // is this a forward declaration?
-	Undefined map[string]struct{} // if function or type that references undefined symbols, we can track them here.
-	Child     *Env
+	Def           parser.Node
+	Ctx           parser.Node         // additional context for error messages
+	ForwardStatus ForwardStatus       // is this a forward declaration?
+	Undefined     map[string]struct{} // if function or type that references undefined symbols, we can track them here.
+	Child         *Env
 }
 
-func NewDefinition(def, ctx parser.Node, isForward bool) Definition {
+func NewDefinition(def, ctx parser.Node, forwardStatus ForwardStatus) Definition {
 	return Definition{
-		Def:       def,
-		Ctx:       ctx,
-		IsForward: isForward,
-		Undefined: make(map[string]struct{}),
+		Def:           def,
+		Ctx:           ctx,
+		ForwardStatus: forwardStatus,
+		Undefined:     make(map[string]struct{}),
 	}
 }
 
@@ -153,7 +185,11 @@ var Universe = &Env{
 // That means we need a var node.
 // We'd like it to be a pointer to a Scope.
 func Resolve(n parser.Node) parser.Node {
-	return resolve(Universe, n)
+	return (&resolver{}).resolve(Universe, n)
+}
+
+type resolver struct {
+	imports map[string]struct{}
 }
 
 // should this be a method on Env?
@@ -174,6 +210,7 @@ func Select(x parser.Node, sel parser.Node) parser.Node {
 		return ch
 	case PackageName:
 		panic("todo")
+		// Go to importer, get package, look up children.
 	case parser.SelectorExpr:
 		return Select(Select(x.X, x.Name), sel)
 	}
@@ -195,19 +232,28 @@ func defineType(env *Env, nd, ctx parser.Node) parser.Node {
 	if id == "_" {
 		return n
 	}
-	isForward := false
+	// isForward := false
+	forwardStatus := NotForward
 	if typeDecl, ok := ctx.(parser.TypeDecl); ok {
-		isForward = typeDecl.Body == nil
+		if typeDecl.Body == nil {
+			forwardStatus = Forward
+		}
+		// isForward = typeDecl.Body == nil
 	}
 	if localDef, ok := env.LookupLocal(id); ok {
 		// we don't allow shadowing in local scope
-		if localDef.IsForward && !isForward {
+		if localDef.ForwardStatus == Forward && forwardStatus == NotForward {
+			localDef.ForwardStatus = ForwardResolved
+			env.symbols[id] = localDef
 			return localDef.Def
 		}
+		// if localDef.IsForward && !isForward {
+		// 	return localDef.Def
+		// }
 		return parser.Illegal{Node: localDef.Def, Msg: fmt.Sprintf("%s was already defined", id)}
 	}
 	t := TypeName{OriginalIdent: n, Env: env}
-	env.AddSymbol(id, NewDefinition(t, ctx, isForward)) // Does this correspond to our logic?
+	env.AddSymbol(id, NewDefinition(t, ctx, forwardStatus)) // Does this correspond to our logic?
 	return t
 }
 
@@ -224,11 +270,11 @@ func defineTag(env *Env, nd, ctx parser.Node) parser.Node {
 		return parser.Illegal{Node: localDef.Def, Msg: fmt.Sprintf("%s was already defined", id)}
 	}
 	c := Cons{OriginalIdent: n, Env: env}
-	env.AddSymbol(id, NewDefinition(c, ctx, false)) // Does this correspond to our logic?
+	env.AddSymbol(id, NewDefinition(c, ctx, NotForward)) // Does this correspond to our logic?
 	return c
 }
 
-func defineDestructure(env *Env, n, ctx parser.Node, f func(string)) parser.Node {
+func (r *resolver) defineDestructure(env *Env, n, ctx parser.Node, f func(string)) parser.Node {
 	switch n := n.(type) {
 	case parser.Ident:
 		id := n.Name.Data
@@ -236,29 +282,41 @@ func defineDestructure(env *Env, n, ctx parser.Node, f func(string)) parser.Node
 			return n
 		}
 		defer f(id)
-		isForward := false
+		forwardStatus := NotForward
+		// isForward := false
 		switch ctx := ctx.(type) {
 		case parser.LetFunction:
-			isForward = ctx.Body == nil
+			if ctx.Body == nil {
+				forwardStatus = Forward
+			}
+			// isForward = ctx.Body == nil
 		case parser.Function:
-			isForward = ctx.Body == nil
+			if ctx.Body == nil {
+				forwardStatus = Forward
+			}
+			// isForward = ctx.Body == nil
 		}
 		if localDef, ok := env.LookupLocal(id); ok {
-			// we don't allow shadowing in local scope
-			if localDef.IsForward && !isForward {
+			if localDef.ForwardStatus == Forward && forwardStatus == NotForward {
+				localDef.ForwardStatus = ForwardResolved
+				env.symbols[id] = localDef
 				return localDef.Def
 			}
+			// if localDef.IsForward && !isForward {
+			// 	return localDef.Def
+			// }
+			// we don't allow shadowing in local scope
 			return parser.Illegal{Node: localDef.Def, Msg: fmt.Sprintf("%s was already defined", id)}
 		}
 		v := Var{OriginalIdent: n, Env: env}
-		env.AddSymbol(id, NewDefinition(v, ctx, isForward)) // Does this correspond to our logic?
+		env.AddSymbol(id, NewDefinition(v, ctx, forwardStatus))
 		return v
 	case parser.CallExpr:
 		// assuming this is a pattern case
-		n.Elements[0] = resolve(env, n.Elements[0])
+		n.Elements[0] = r.resolve(env, n.Elements[0])
 		if tag, ok := n.Elements[0].(parser.SelectorExpr); ok {
 			if _, ok := tag.Name.(Cons); ok {
-				n.Elements[1] = defineDestructure(env, n.Elements[1], ctx, f)
+				n.Elements[1] = r.defineDestructure(env, n.Elements[1], ctx, f)
 			}
 		}
 		return n
@@ -275,7 +333,7 @@ func defineDestructure(env *Env, n, ctx parser.Node, f func(string)) parser.Node
 		if _, ok := n.Name.(Cons); ok {
 			return n
 		}
-		return defineDestructure(env, resolve(env, n), ctx, f)
+		return r.defineDestructure(env, r.resolve(env, n), ctx, f)
 		// assuming this is a pattern case
 		// n.X = resolve(env, n.X)
 		// switch x := n.X.(type) {
@@ -294,15 +352,15 @@ func defineDestructure(env *Env, n, ctx parser.Node, f func(string)) parser.Node
 	// 	}
 	case parser.Tuple:
 		for i := range n.Elements {
-			n.Elements[i] = defineDestructure(env, n.Elements[i], ctx, f)
+			n.Elements[i] = r.defineDestructure(env, n.Elements[i], ctx, f)
 		}
 		return n
 	case parser.CommaElement:
-		return defineDestructure(env, n.X, ctx, f)
+		return r.defineDestructure(env, n.X, ctx, f)
 	case parser.TypeAnnotation:
 		panic("todo")
 	case parser.Param:
-		return defineDestructure(env, n.Name, ctx, f)
+		return r.defineDestructure(env, n.Name, ctx, f)
 	}
 	panic(fmt.Sprintf("unreachable %T", n))
 }
@@ -334,8 +392,8 @@ func setIllegals(env *Env, id string, n parser.Node) {
 	}
 	visit(n, func(body parser.Node, rec visitorRec) (parser.Node, bool) {
 		switch body := body.(type) {
-		case parser.Illegal:
-			switch nid := body.Node.(type) {
+		case UnresolvedIdent:
+			switch nid := body.OriginalIdent.(type) {
 			case parser.Ident:
 				sym := env.symbols[id]
 				sym.Undefined[nid.Name.Data] = struct{}{}
@@ -350,7 +408,7 @@ func setIllegals(env *Env, id string, n parser.Node) {
 				sym.Undefined[udef] = struct{}{}
 			}
 			return body, false
-		case parser.Ident, parser.Number, parser.String, parser.StringPart, parser.FunctionSignature:
+		case nil, parser.Ident, parser.Number, parser.String, parser.StringPart, parser.FunctionSignature:
 			return body, false
 		}
 		return rec(body) // if base cases aren't handled, this could recur forever.
@@ -496,6 +554,21 @@ func visit1(n parser.Node, f visitorFunc) (parser.Node, bool) {
 		}
 		n.Name, quit = f(n.Name, rec)
 		return n, quit
+	case Var:
+		n.OriginalIdent, quit = f(n.OriginalIdent, rec)
+		return n, quit
+	case TypeName:
+		n.OriginalIdent, quit = f(n.OriginalIdent, rec)
+		return n, quit
+	case UnresolvedIdent:
+		n.OriginalIdent, quit = f(n.OriginalIdent, rec)
+		return n, quit
+	case PackageName:
+		n.OriginalIdent, quit = f(n.OriginalIdent, rec)
+		return n, quit
+	case Cons:
+		n.OriginalIdent, quit = f(n.OriginalIdent, rec)
+		return n, quit
 	default:
 		return f(n, rec)
 	}
@@ -514,23 +587,30 @@ func resolveTopLevel(env *Env, n parser.Node) parser.Node {
 	panic("TODO")
 }
 
-func resolve(env *Env, n parser.Node) parser.Node {
+func (r *resolver) resolve(env *Env, n parser.Node) parser.Node {
 	switch n := n.(type) {
 	case parser.BinaryExpr:
-		n.Left = resolve(env, n.Left)
-		n.Right = resolve(env, n.Right)
+		n.Left = r.resolve(env, n.Left)
+		n.Right = r.resolve(env, n.Right)
 		return n
 	case parser.Stmt:
-		n.Stmt = resolve(env, n.Stmt)
+		n.Stmt = r.resolve(env, n.Stmt)
 		return n
 	case parser.Package:
+		n.Imports = make(map[string]struct{})
 		// introduce package scope
 		packageScope := env.AddScope()
 		for i := range n.PackageFiles {
 			n.PackageFiles[i] = resolveTopLevel(packageScope, n.PackageFiles[i])
+			if f, ok := n.PackageFiles[i].(parser.File); ok {
+				maps.Copy(n.Imports, f.Imports)
+			}
 		}
 		for i := range n.ScriptFiles {
-			n.ScriptFiles[i] = resolve(env.AddScope(), n.ScriptFiles[i])
+			n.ScriptFiles[i] = r.resolve(env.AddScope(), n.ScriptFiles[i])
+			if f, ok := n.ScriptFiles[i].(parser.File); ok {
+				maps.Copy(n.Imports, f.Imports)
+			}
 		}
 		// TODO: resolve cross-file identifiers
 		return n
@@ -560,7 +640,10 @@ func resolve(env *Env, n parser.Node) parser.Node {
 		// 	packageEnv = env.AddScope()
 		// 	packageDef.Child = packageEnv
 		// }
-		n.Body = resolve(env, n.Body)
+		r.imports = make(map[string]struct{})
+		n.Body = r.resolve(env, n.Body)
+		n.Imports = r.imports
+		r.imports = nil
 		return n
 	case parser.Ident:
 		// what if ident is "_"?
@@ -571,14 +654,15 @@ func resolve(env *Env, n parser.Node) parser.Node {
 		if ok {
 			return def.Def
 		}
-		return parser.Illegal{Node: n, Msg: fmt.Sprintf("undefined: %s", n.Name.Data)}
+		return UnresolvedIdent{OriginalIdent: n, Env: env}
+		// return parser.Illegal{Node: n, Msg: fmt.Sprintf("undefined: %s", n.Name.Data)} // TODO: should this be UnknownIdent?
 	case parser.Illegal:
-		n.Node = resolve(env, n.Node)
+		n.Node = r.resolve(env, n.Node)
 		return n // At what point do we reject programs with illegal nodes?
 	case parser.Block:
 		env := env.AddScope()
 		for i := range n.Body {
-			n.Body[i] = resolve(env, n.Body[i])
+			n.Body[i] = r.resolve(env, n.Body[i])
 		}
 		return resolveIllegals(env, n)
 	case parser.EmptyExpr:
@@ -596,15 +680,15 @@ func resolve(env *Env, n parser.Node) parser.Node {
 			v := v
 			delete(v.Undefined, id)
 		}
-		n.Name = defineDestructure(env, n.Name, n, func(string) {})
-		n.Signature = resolve(env, n.Signature)
+		n.Name = r.defineDestructure(env, n.Name, n, func(string) {})
+		n.Signature = r.resolve(env, n.Signature)
 		sig := n.Signature.(parser.FunctionSignature)
 		// Add function name to scope. But allow it to get shadowed.
-		fnNameScope := env.AddScope().AddSymbol(id, NewDefinition(n.Name, n, false))
+		fnNameScope := env.AddScope().AddSymbol(id, NewDefinition(n.Name, n, NotForward))
 		bodyScope := fnNameScope.AddScope()
-		sig.Param = defineDestructure(bodyScope, sig.Param, sig, func(id string) {})
+		sig.Param = r.defineDestructure(bodyScope, sig.Param, sig, func(id string) {})
 		n.Signature = sig
-		n.Body = resolve(bodyScope, n.Body)
+		n.Body = r.resolve(bodyScope, n.Body)
 		setIllegals(env, id, n.Body)
 		return n
 	case parser.Function:
@@ -614,19 +698,19 @@ func resolve(env *Env, n parser.Node) parser.Node {
 			v := v
 			delete(v.Undefined, id)
 		}
-		n.Name = defineDestructure(env, n.Name, n, func(string) {})
-		n.Signature = resolve(env, n.Signature)
+		n.Name = r.defineDestructure(env, n.Name, n, func(string) {})
+		n.Signature = r.resolve(env, n.Signature)
 		sig := n.Signature.(parser.FunctionSignature)
 		// Add function name to scope. But allow it to get shadowed.
-		fnNameScope := env.AddScope().AddSymbol(id, NewDefinition(n.Name, n, false))
+		fnNameScope := env.AddScope().AddSymbol(id, NewDefinition(n.Name, n, NotForward))
 		bodyScope := fnNameScope.AddScope()
-		sig.Param = defineDestructure(bodyScope, sig.Param, sig, func(id string) {})
+		sig.Param = r.defineDestructure(bodyScope, sig.Param, sig, func(id string) {})
 		n.Signature = sig
-		n.Body = resolve(bodyScope, n.Body)
+		n.Body = r.resolve(bodyScope, n.Body)
 		setIllegals(env, id, n.Body)
 		return n
 	case parser.CommaElement:
-		n.X = resolve(env, n.X)
+		n.X = r.resolve(env, n.X)
 		return n
 	case parser.Tuple:
 		// Note: Tuple literals have an ambiguity in that they can be used for struct literals and map literals.
@@ -635,37 +719,37 @@ func resolve(env *Env, n parser.Node) parser.Node {
 		// and fix it up in type checking. If it *is* in scope, it is a false positive.
 		// In reality, if it's a struct, there should be a new scope created for the struct fields that are introduced.
 		for i := range n.Elements {
-			n.Elements[i] = resolve(env, n.Elements[i])
+			n.Elements[i] = r.resolve(env, n.Elements[i])
 		}
 		return n
 	case parser.LetDecl:
 		// resolve right, then introduce bindings. don't leave it up to the ident rule.
-		n.Rhs = resolve(env, n.Rhs) // Does this correspond to my strategy?
-		n.Destructure = defineDestructure(env, n.Destructure, n, func(id string) {
+		n.Rhs = r.resolve(env, n.Rhs) // Does this correspond to my strategy?
+		n.Destructure = r.defineDestructure(env, n.Destructure, n, func(id string) {
 			// setIllegalsUsingWalk(env, id, n.Rhs)
 			setIllegals(env, id, n.Rhs)
 		})
 		return n
 	case parser.VarDecl:
 		// resolve right, then introduce bindings. don't leave it up to the ident rule.
-		n.Rhs = resolve(env, n.Rhs) // Does this correspond to my strategy?
-		n.Destructure = defineDestructure(env, n.Destructure, n, func(id string) {
+		n.Rhs = r.resolve(env, n.Rhs) // Does this correspond to my strategy?
+		n.Destructure = r.defineDestructure(env, n.Destructure, n, func(id string) {
 			setIllegals(env, id, n.Rhs)
 		})
 		return n
 	case parser.IfHeader:
-		n.Cond = resolve(env, n.Cond)
+		n.Cond = r.resolve(env, n.Cond)
 		return n
 	case parser.If:
-		n.IfHeader = resolve(env, n.IfHeader)
-		n.Body = resolve(env, n.Body)
+		n.IfHeader = r.resolve(env, n.IfHeader)
+		n.Body = r.resolve(env, n.Body)
 	case parser.IfElse:
-		n.IfHeader = resolve(env, n.IfHeader)
-		n.Body = resolve(env, n.Body)
-		n.ElseBody = resolve(env, n.ElseBody)
+		n.IfHeader = r.resolve(env, n.IfHeader)
+		n.Body = r.resolve(env, n.Body)
+		n.ElseBody = r.resolve(env, n.ElseBody)
 		return n
 	case parser.IfMatch:
-		n.IfHeader = resolve(env, n.IfHeader)
+		n.IfHeader = r.resolve(env, n.IfHeader)
 		for i := range n.Cases {
 			/*
 				1. Add a scope for each case.
@@ -685,11 +769,11 @@ func resolve(env *Env, n parser.Node) parser.Node {
 			// n.Cases[i] =
 			pat := patternCase.Pattern
 			patternCase = n.Cases[i].(parser.PatternCase)
-			patternCase.Pattern = defineDestructure(patternScope, pat, patternCase, func(id string) {
+			patternCase.Pattern = r.defineDestructure(patternScope, pat, patternCase, func(id string) {
 				setIllegals(patternScope, id, n.IfHeader)
 			})
-			patternCase.Guard = resolve(patternScope, patternCase.Guard)
-			patternCase.Expr = resolve(patternScope, patternCase.Expr)
+			patternCase.Guard = r.resolve(patternScope, patternCase.Guard)
+			patternCase.Expr = r.resolve(patternScope, patternCase.Expr)
 			n.Cases[i] = patternCase
 		}
 		return n
@@ -705,7 +789,7 @@ func resolve(env *Env, n parser.Node) parser.Node {
 		id := n.Name.(parser.Ident).Name.Data
 		n.Name = defineType(env, n.Name, n)
 		bodyScope := env.AddScope()
-		n.Body = resolve(bodyScope, n.Body)
+		n.Body = r.resolve(bodyScope, n.Body)
 		// copy bodyScope.symbols to def.children
 		// for k, v := range bodyScope.symbols {
 		// 	if sym, ok := env.symbols[id]; ok {
@@ -730,22 +814,22 @@ func resolve(env *Env, n parser.Node) parser.Node {
 	case parser.NamedType:
 	case parser.SumType:
 		for i := range n.Elements {
-			n.Elements[i] = resolve(env, n.Elements[i])
+			n.Elements[i] = r.resolve(env, n.Elements[i])
 		}
 		return n
 	case parser.SumTypeElement:
 		n.Name = defineTag(env, n.Name, n)
-		n.Type = resolve(env, n.Type)
+		n.Type = r.resolve(env, n.Type)
 		return n
 	case parser.ForallType:
 	case parser.FunctionType:
 	case parser.Field:
 	case parser.PrefixExpr:
-		n.X = resolve(env, n.X)
+		n.X = r.resolve(env, n.X)
 		return n
 	case parser.CallExpr:
 		for i := range n.Elements {
-			n.Elements[i] = resolve(env, n.Elements[i]) // TODO: fix refs to Illegal node later.
+			n.Elements[i] = r.resolve(env, n.Elements[i]) // TODO: fix refs to Illegal node later.
 			// check if caller references an ident whose len(def.Undefined) != 0
 			// if so, error.
 			nd := n.Elements[i]
@@ -755,27 +839,66 @@ func resolve(env *Env, n parser.Node) parser.Node {
 		}
 		return n
 	case parser.PostfixExpr:
-		n.X = resolve(env, n.X)
+		n.X = r.resolve(env, n.X)
 		return n
 	case parser.SelectorExpr:
-		n.X = resolve(env, n.X)
+		n.X = r.resolve(env, n.X)
 		n.Name = Select(n.X, n.Name)
 		return n
 	case parser.StringPart:
 	case parser.String:
 	case parser.IndexExpr:
-		// TODO: imports
-		n.X = resolve(env, n.X)
+		n.X = r.resolve(env, n.X)
 		for i := range n.IndexElements {
-			n.IndexElements[i] = resolve(env, n.IndexElements[i])
+			n.IndexElements[i] = r.resolve(env, n.IndexElements[i])
 		}
 		return n
 	case parser.ImportDecl:
-		n.Package = resolve(env, n.Package)
+		n.Package = r.resolve(env, n.Package)
 	case parser.ImportDeclPackage:
+		var importPath string
+		if path, ok := n.Path.(parser.String); ok {
+			if path, ok := path.Parts[0].(parser.StringPart); ok {
+				importPath = path.Lit.Data
+				r.imports[importPath] = struct{}{}
+			}
+		}
 		switch bind := n.Binding.(type) {
 		case parser.Ident:
+			id := bind.Name.Data
+			if localDef, ok := env.LookupLocal(id); ok {
+				n.Binding = parser.Illegal{Node: localDef.Def, Msg: fmt.Sprintf("%s was already defined", id)}
+			} else {
+				u := PackageName{OriginalIdent: bind, Env: env}
+				env.AddSymbol(id, NewDefinition(u, n, NotForward))
+				n.Binding = u
+			}
 		case parser.Tuple:
+			for i := range bind.Elements {
+				switch elem := bind.Elements[i].(type) {
+				case parser.Ident:
+					bind.Elements[i] = r.defineDestructure(env, elem, n, func(id string) {})
+				case parser.IndexExpr:
+					bind.Elements[i] = r.defineDestructure(env, elem.X, n, func(id string) {})
+					for j := range elem.IndexElements {
+						if indexElem, ok := elem.IndexElements[j].(parser.Ident); ok {
+							elem.IndexElements[j] = r.defineDestructure(env, indexElem, n, func(id string) {})
+						}
+					}
+				}
+			}
+			n.Binding = bind
+		default:
+			if prefix, _, ok := module.SplitPathVersion(importPath); ok {
+				id := path.Base(prefix)
+				if localDef, ok := env.LookupLocal(id); ok {
+					n.Binding = parser.Illegal{Node: localDef.Def, Msg: fmt.Sprintf("%s was already defined", id)}
+				} else {
+					u := PackageName{OriginalIdent: bind, Env: env}
+					env.AddSymbol(id, NewDefinition(u, n, NotForward))
+					n.Binding = u
+				}
+			}
 		}
 	case parser.With:
 	case parser.ImplDecl:
@@ -783,38 +906,102 @@ func resolve(env *Env, n parser.Node) parser.Node {
 	case parser.NillableType:
 	case Var: // is it possible to hit this case?
 	case TypeName:
+	case UnresolvedIdent:
 	case Cons:
 	case PackageName:
 	}
 	return n
 }
 
+// TODO: tuple keys should be unresolved until typechecking.
+// TODO: forward declarations that are not defined should be illegal.
 func resolveIllegals(env *Env, body parser.Node) parser.Node {
 	return visit(body, func(n parser.Node, rec visitorRec) (parser.Node, bool) {
 		switch n := n.(type) {
-		case parser.Illegal:
-			switch nid := n.Node.(type) {
+		case UnresolvedIdent:
+			switch nid := n.OriginalIdent.(type) {
 			case parser.Ident:
 				if def, ok := env.LookupLocal(nid.Name.Data); ok {
 					// update this node to point to the definition.
 					return def.Def, false
-				} else {
-					// should we modify the message to be that the ident is undefined?
-					n.Msg = fmt.Sprintf("undefined: %s", nid.Name.Data)
-					return n, false
 				}
-			case Var:
-				id := nid.OriginalIdent.(parser.Ident).Name.Data
-				if def, ok := env.LookupLocal(id); ok {
-					// update this node to point to the definition.
-					return def.Def, false
+				return n, false
+			default:
+				return rec(nid)
+			}
+		case parser.CommaElement:
+			var quit bool
+			if binExp, ok := n.X.(parser.BinaryExpr); ok {
+				if nid, ok := binExp.Left.(Var); ok && binExp.Op.Type == lexer.Equals {
+					binExp.Left = UnresolvedIdent(nid)
 				} else {
-					// should we modify the message to be that the ident is undefined?
-					n.Msg = fmt.Sprintf("undefined: %s", id)
-					return n, false
+					binExp.Left, quit = rec(binExp.Left)
+				}
+				if n.X = binExp; quit {
+					return n, true
+				}
+				binExp.Right, quit = rec(binExp.Right)
+				if n.X = binExp; quit {
+					return n, true
+				}
+			} else {
+				if n.X, quit = rec(n.X); quit {
+					return n, true
 				}
 			}
-		case nil, Var, TypeName, Cons, PackageName, parser.Ident, parser.Number, parser.String, parser.StringPart, parser.FunctionSignature:
+			return n, false
+		case Var:
+			id := n.OriginalIdent.(parser.Ident).Name.Data
+			if n.Env.symbols[id].ForwardStatus == Forward {
+				// unresolved forward declaration.
+				// this is illegal.
+				return parser.Illegal{Node: n, Msg: fmt.Sprintf("%s was not defined", id)}, false
+			}
+			return n, false
+		// case parser.LetFunction:
+		// 	var quit bool
+		// 	if n.Name, quit = rec(n.Name); quit {
+		// 		return n, quit
+		// 	}
+		// 	if n.Signature, quit = rec(n.Signature); quit {
+		// 		return n, quit
+		// 	}
+		// 	n.Body, quit = rec(n.Body)
+		// 	return n, quit
+		// case parser.Function:
+		// 	var quit bool
+		// 	if n.Name, quit = rec(n.Name); quit {
+		// 		return n, quit
+		// 	}
+		// 	if n.Signature, quit = rec(n.Signature); quit {
+		// 		return n, quit
+		// 	}
+		// 	n.Body, quit = rec(n.Body)
+		// 	return n, quit
+		// case parser.Illegal:
+		// 	switch nid := n.Node.(type) {
+		// 	case parser.Ident:
+		// 		if def, ok := env.LookupLocal(nid.Name.Data); ok {
+		// 			// update this node to point to the definition.
+		// 			return def.Def, false
+		// 		} else {
+		// 			// should we modify the message to be that the ident is undefined?
+		// 			n.Msg = fmt.Sprintf("undefined: %s", nid.Name.Data)
+		// 			return n, false
+		// 		}
+		// 	case Var:
+		// 		id := nid.OriginalIdent.(parser.Ident).Name.Data
+		// 		if def, ok := env.LookupLocal(id); ok {
+		// 			// update this node to point to the definition.
+		// 			return def.Def, false
+		// 		} else {
+		// 			// should we modify the message to be that the ident is undefined?
+		// 			n.Msg = fmt.Sprintf("undefined: %s", id)
+		// 			return n, false
+		// 		}
+		// 	}
+		// // case UnknownIdent:
+		case nil, parser.Ident, parser.Number, parser.String, parser.StringPart, parser.FunctionSignature:
 			return n, false
 		}
 		return rec(n)
@@ -831,6 +1018,7 @@ func findUndefined(nd parser.Node) (id string, found bool) {
 				found = true
 				return nd, true
 			}
+			return nd, false
 		case parser.Ident, parser.Number, parser.String, parser.StringPart, parser.FunctionSignature:
 			return nd, false
 		}

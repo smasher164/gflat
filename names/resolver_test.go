@@ -11,14 +11,15 @@ import (
 func Test(t *testing.T) {
 	fsys := fstest.MapFS{
 		"test.gf": &fstest.MapFile{
+			// TODO: make this an UnknownIdent
 			Data: []byte(`
-			type A = 
-				| B
-				| C
-			if (1)
-			| A.B x => x
-			| A.C => 2
+			let foo() -> int
+			let foo() -> int = 1
 			`),
+			// Data: []byte(`
+			// let a = 2
+			// (a = 1)
+			// `),
 		},
 	}
 	// l, err := lexer.NewLexer("test.txt")
