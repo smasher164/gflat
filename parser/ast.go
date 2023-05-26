@@ -23,7 +23,6 @@ var (
 	_ Node = Block{}
 	_ Node = EmptyExpr{}
 	_ Node = TypeAnnotation{}
-	_ Node = TupleParam{}
 	_ Node = FunctionSignature{}
 	_ Node = Param{}
 	_ Node = Arrow{}
@@ -342,38 +341,6 @@ func (t TypeAnnotation) LeadingTrivia() []lexer.Token {
 func (t TypeAnnotation) Span() lexer.Span {
 	return spanOf(t.Destructure).Add(t.Colon.Span).Add(spanOf(t.Type))
 }
-
-type TupleParam struct {
-	Name  Ident
-	Colon lexer.Token
-	Type  Node
-}
-
-func (n TupleParam) LeadingTrivia() []lexer.Token {
-	return n.Name.LeadingTrivia()
-}
-
-func (n TupleParam) Span() lexer.Span {
-	return n.Name.Span().Add(n.Colon.Span).Add(spanOf(n.Type))
-}
-
-func (n TupleParam) ASTString(depth int) string {
-	return fmt.Sprintf(
-		"TupleParam\n%sName: %s\n%sColon: %s\n%sType: %s",
-		indent(depth+1),
-		n.Name.ASTString(depth+1), indent(depth+1),
-		n.Colon, indent(depth+1),
-		n.Type.ASTString(depth+1))
-}
-
-// type Function struct {
-// 	Fun   lexer.Token
-// 	Arg   Node
-// 	Colon lexer.Token
-// 	Type  Node
-// 	Arrow lexer.Token
-// 	Body  Node
-// }
 
 type FunctionSignature struct {
 	Param  Node

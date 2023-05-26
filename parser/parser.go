@@ -863,7 +863,7 @@ func (p *parser) parsePattern() Node {
 		pat = TypeAnnotation{
 			Destructure: pat,
 			Colon:       colon,
-			Type:        typ,
+			Type:        typ, // is the type part of the patten allowed to introduce a new binding here?
 		}
 	}
 	if p.tok.Type == lexer.Or {
