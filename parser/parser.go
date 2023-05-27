@@ -310,7 +310,7 @@ func (p *parser) parseFunctionSignature() FunctionSignature {
 	if p.tok.Type == lexer.With {
 		fun.With = p.tok
 		p.next()
-		fun.Clause = p.parseTypeBody(false, true, false)
+		fun.Clause = p.parseTypeBodyWithoutWith(false, true, false)
 	}
 	return fun
 }
@@ -1431,7 +1431,7 @@ func (p *parser) parseTypeBody(parseSumType, parseConstraint, parseAssignment bo
 		// with clause is just a comma-delimited list of type bodies.
 		// might have to restrict it to everything but sums
 		// typeConstraint := p.parseTupleTypeConstraint(false)
-		typeConstraint := p.parseTypeBody(false, true, false)
+		typeConstraint := p.parseTypeBodyWithoutWith(false, true, false)
 		return With{
 			TypeBody: tb,
 			With:     with,
@@ -1656,7 +1656,7 @@ func (p *parser) parseImplDecl() Node {
 	if p.tok.Type == lexer.With {
 		impl.With = p.tok
 		p.next()
-		impl.Clause = p.parseTypeBody(false, true, false)
+		impl.Clause = p.parseTypeBodyWithoutWith(false, true, false)
 	}
 	if p.tok.Type == lexer.Equals {
 		impl.Equals = p.tok

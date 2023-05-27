@@ -162,7 +162,7 @@ func TestFile(t *testing.T) {
 			// | Maybe.None => 0
 			// `),
 			Data: []byte(`
-			import (Foo[bar, baz]) = "github.com/someone/math"
+			let x : fun int with 'a = 3
 			`),
 		},
 	}

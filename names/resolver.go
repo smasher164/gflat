@@ -622,6 +622,16 @@ func (r *resolver) resolve(env *Env, n parser.Node) parser.Node {
 		return n
 	case parser.TypeAnnotation:
 	case parser.FunctionSignature:
+		/*
+			in order to know if 'a is a new param or not, we need to examine the with clause.
+			param names get added to scope.
+			if a parameter type is a non-forall type variable, call defineTypeParam on it
+		*/
+		// n.Param = r.resolve(env, n.Param)
+		// for i := range n.Arrows {
+		// 	n.Arrows[i] = r.resolve(env, n.Arrows[i])
+		// }
+
 	case parser.Param:
 	case parser.Arrow:
 		n.Type = r.resolve(env, n.Type)
@@ -633,11 +643,11 @@ func (r *resolver) resolve(env *Env, n parser.Node) parser.Node {
 			delete(v.Undefined, id)
 		}
 		n.Name = r.defineDestructure(env, n.Name, n, func(string) {})
-		n.Signature = r.resolve(env, n.Signature)
-		sig := n.Signature.(parser.FunctionSignature)
 		bodyScope := env.AddScope()
-		sig.Param = r.defineDestructure(bodyScope, sig.Param, sig, func(id string) {})
-		n.Signature = sig
+		n.Signature = r.resolve(bodyScope, n.Signature)
+		// sig := n.Signature.(parser.FunctionSignature)
+		// sig.Param = r.defineDestructure(bodyScope, sig.Param, sig, func(id string) {})
+		// n.Signature = sig
 		n.Body = r.resolve(bodyScope, n.Body)
 		setIllegals(env, id, n.Body)
 		return n
@@ -771,6 +781,10 @@ func (r *resolver) resolve(env *Env, n parser.Node) parser.Node {
 		n.Type = r.resolve(env, n.Type)
 		return n
 	case parser.ForallType:
+		typeScope := env.AddScope()
+		n.TypeArg = defineTypeParam(typeScope, n.TypeArg, n)
+		n.Type = r.resolve(typeScope, n.Type)
+		return n
 	case parser.FunctionType:
 		n.Param = r.resolve(env, n.Param)
 		for i := range n.Arrows {
