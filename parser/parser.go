@@ -286,8 +286,8 @@ func (p *parser) parseFunctionSignature() FunctionSignature {
 	defer p.trace("parseFunctionSignature")()
 	var fun FunctionSignature
 	if p.tok.Type == lexer.Ident {
-		var param Param
-		param.Name = Ident{Name: p.tok}
+		var param TypeAnnotation
+		param.Destructure = Ident{Name: p.tok}
 		p.next()
 		if p.tok.Type == lexer.Colon {
 			param.Colon = p.tok

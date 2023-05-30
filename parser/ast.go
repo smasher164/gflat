@@ -24,7 +24,6 @@ var (
 	_ Node = EmptyExpr{}
 	_ Node = TypeAnnotation{}
 	_ Node = FunctionSignature{}
-	_ Node = Param{}
 	_ Node = Arrow{}
 	_ Node = LetFunction{}
 	_ Node = Function{}
@@ -40,7 +39,6 @@ var (
 	_ Node = NamedTypeParameter{}
 	_ Node = NamedTypeArgument{}
 	_ Node = TypeApplication{}
-	_ Node = NamedType{}
 	_ Node = SumType{}
 	_ Node = SumTypeElement{}
 	_ Node = ForallType{}
@@ -326,6 +324,13 @@ type TypeAnnotation struct {
 }
 
 func (t TypeAnnotation) ASTString(depth int) string {
+	if t.Type == nil {
+		return fmt.Sprintf(
+			"TypeAnnotation\n%sDestructure: %s\n%sColon: %s",
+			indent(depth+1),
+			t.Destructure.ASTString(depth+1), indent(depth+1),
+			t.Colon)
+	}
 	return fmt.Sprintf(
 		"TypeAnnotation\n%sDestructure: %s\n%sColon: %s\n%sType: %s",
 		indent(depth+1),
@@ -370,35 +375,6 @@ func (n FunctionSignature) ASTString(depth int) string {
 		indent(depth+1),
 		n.Param.ASTString(depth+1), indent(depth+1),
 		printNodeSlice(depth+1, n.Arrows))
-}
-
-type Param struct {
-	Name  Ident
-	Colon lexer.Token
-	Type  Node
-}
-
-func (n Param) LeadingTrivia() []lexer.Token {
-	return n.Name.LeadingTrivia()
-}
-
-func (n Param) Span() lexer.Span {
-	return n.Name.Span().Add(n.Colon.Span).Add(spanOf(n.Type))
-}
-
-func (n Param) ASTString(depth int) string {
-	if n.Type == nil {
-		return fmt.Sprintf(
-			"Param\n%sName: %s",
-			indent(depth+1),
-			n.Name.ASTString(depth+1))
-	}
-	return fmt.Sprintf(
-		"Param\n%sName: %s\n%sColon: %s\n%sType: %s",
-		indent(depth+1),
-		n.Name.ASTString(depth+1), indent(depth+1),
-		n.Colon, indent(depth+1),
-		n.Type.ASTString(depth+1))
 }
 
 type Arrow struct {
@@ -783,23 +759,6 @@ func (t TypeApplication) Span() lexer.Span {
 
 func (t TypeApplication) ASTString(depth int) string {
 	return fmt.Sprintf("TypeApplication\n%sElements: %s", indent(depth+1), printNodeSlice(depth+1, t.Elements))
-}
-
-type NamedType struct {
-	Name Node
-	Args []Node
-}
-
-func (n NamedType) LeadingTrivia() []lexer.Token {
-	return leadingTriviaOf(n.Name)
-}
-
-func (n NamedType) Span() lexer.Span {
-	return spanOf(n.Name).Add(spanOf(n.Args))
-}
-
-func (n NamedType) ASTString(depth int) string {
-	return fmt.Sprintf("NamedType\n%sName: %s\n%sArgs: %s", indent(depth+1), n.Name.ASTString(depth+1), indent(depth+1), printNodeSlice(depth+1, n.Args))
 }
 
 type SumType struct {

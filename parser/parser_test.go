@@ -162,7 +162,7 @@ func TestFile(t *testing.T) {
 			// | Maybe.None => 0
 			// `),
 			Data: []byte(`
-			let x : fun int with 'a = 3
+			fun foo(a: 'a, b: 'b) with 'a 'b (Copy 'a 'b) => 1
 			`),
 		},
 	}

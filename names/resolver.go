@@ -16,7 +16,26 @@ var (
 	_ parser.Node = UnresolvedIdent{}
 	_ parser.Node = PackageName{}
 	_ parser.Node = Cons{}
+	_ parser.Node = TypeVar{}
 )
+
+type TypeVar struct {
+	OriginalTypeVar parser.Node
+	// Reference to environment here.
+	Env *Env
+}
+
+func (v TypeVar) ASTString(depth int) string {
+	return fmt.Sprintf("TypeVar: %s", v.OriginalTypeVar.ASTString(depth))
+}
+
+func (v TypeVar) LeadingTrivia() []lexer.Token {
+	return v.OriginalTypeVar.LeadingTrivia()
+}
+
+func (v TypeVar) Span() lexer.Span {
+	return v.OriginalTypeVar.Span()
+}
 
 // Var is a variable Node that points into a Scope object.
 type Var struct {
@@ -350,12 +369,79 @@ func (r *resolver) defineDestructure(env *Env, n, ctx parser.Node, f func(string
 		return n
 	case parser.CommaElement:
 		return r.defineDestructure(env, n.X, ctx, f)
+	// case parser.TypeAnnotation:
+	// 	n.Destructure = r.defineDestructure(env, n.Destructure, ctx, f)
+	// 	n.Type = r.resolve(env, n.Type)
+	// 	return n
 	case parser.TypeAnnotation:
 		n.Destructure = r.defineDestructure(env, n.Destructure, ctx, f)
-		n.Type = r.resolve(env, n.Type)
+		if n.Type != nil {
+			n.Type = r.defineResolveTypeAnnotation(env, n.Type, ctx)
+		}
 		return n
-	case parser.Param:
-		return r.defineDestructure(env, n.Name, ctx, f)
+	}
+	panic(fmt.Sprintf("unreachable %T", n))
+}
+
+func (r *resolver) defineResolveTypeAnnotation(env *Env, n, ctx parser.Node) parser.Node {
+	switch n := n.(type) {
+	case parser.Tuple:
+		for i := range n.Elements {
+			n.Elements[i] = r.defineResolveTypeAnnotation(env, n.Elements[i], ctx)
+		}
+		return n
+	case parser.CommaElement:
+		n.X = r.defineResolveTypeAnnotation(env, n.X, ctx)
+		return n
+	case parser.Field:
+		n.Name = r.resolve(env, n.Name)
+		n.Type = r.defineResolveTypeAnnotation(env, n.Type, ctx)
+		// what's interesting is that n.Default can reference the function name and existing parameters
+		// TODO: make sure to test this.
+		n.Default = r.resolve(env, n.Default)
+		return n
+	case parser.NamedTypeArgument:
+		if d, ok := env.LookupStack(n.TypeArg.Data); ok {
+			return d.Def
+		}
+		d := NewDefinition(TypeVar{OriginalTypeVar: n, Env: env}, ctx, NotForward)
+		env.AddSymbol(n.TypeArg.Data, d)
+		return d.Def
+	case parser.Ident:
+		return r.resolve(env, n)
+	case parser.FunctionType:
+		n.Param = r.defineResolveTypeAnnotation(env, n.Param, ctx)
+		for i := range n.Arrows {
+			n.Arrows[i] = r.defineResolveTypeAnnotation(env, n.Arrows[i], ctx)
+		}
+		return n
+	case parser.NillableType:
+		n.Type = r.defineResolveTypeAnnotation(env, n.Type, ctx)
+		return n
+	case parser.ForallType:
+		forAllScope := env.AddScope()
+		n.TypeArg = r.defineResolveTypeAnnotation(forAllScope, n.TypeArg, ctx)
+		n.Type = r.defineResolveTypeAnnotation(forAllScope, n.Type, ctx)
+		return n
+	case parser.ArrayType:
+		n.Type = r.defineResolveTypeAnnotation(env, n.Type, ctx)
+		return n
+	case parser.SelectorExpr:
+		return r.resolve(env, n)
+	case parser.TypeApplication:
+		for i := range n.Elements {
+			n.Elements[i] = r.defineResolveTypeAnnotation(env, n.Elements[i], ctx)
+		}
+		return n
+	case parser.SumType:
+		for i := range n.Elements {
+			n.Elements[i] = r.defineResolveTypeAnnotation(env, n.Elements[i], ctx)
+		}
+		return n
+	case parser.SumTypeElement:
+		n.Name = defineTag(env, n.Name, n)
+		n.Type = r.defineResolveTypeAnnotation(env, n.Type, ctx)
+		return n
 	}
 	panic(fmt.Sprintf("unreachable %T", n))
 }
@@ -622,8 +708,19 @@ func (r *resolver) resolve(env *Env, n parser.Node) parser.Node {
 		return n
 	case parser.TypeAnnotation:
 	case parser.FunctionSignature:
+		// new plan: if a tvar doesn't exist in the env, it's a new type param.
+		n.Param = r.resolve(env, n.Param)
+		for i := range n.Arrows {
+			n.Arrows[i] = r.defineResolveTypeAnnotation(env, n.Arrows[i], n)
+		}
+		// TODO: handle with clause
+		return n
+
+		// n.Clause = r.resolveWithConstraint(env, n.Clause)
 		/*
-			in order to know if 'a is a new param or not, we need to examine the with clause.
+		 */
+		/*
+			in order to know if 'a is a new param or not, we need to examine the "with" clause.
 			param names get added to scope.
 			if a parameter type is a non-forall type variable, call defineTypeParam on it
 		*/
@@ -749,7 +846,10 @@ func (r *resolver) resolve(env *Env, n parser.Node) parser.Node {
 		id := n.Name.(parser.Ident).Name.Data
 		n.Name = defineType(env, n.Name, n)
 		bodyScope := env.AddScope()
-		n.Body = r.resolve(bodyScope, n.Body)
+		for i := range n.TypeParams {
+			n.TypeParams[i] = defineTypeParam(bodyScope, n.TypeParams[i], n)
+		}
+		n.Body = r.defineResolveTypeAnnotation(bodyScope, n.Body, n)
 		// copy bodyScope.symbols to def.children
 		for k, v := range bodyScope.symbols {
 			if sym, ok := env.symbols[id]; ok {
@@ -770,27 +870,28 @@ func (r *resolver) resolve(env *Env, n parser.Node) parser.Node {
 			n.Elements[i] = r.resolve(env, n.Elements[i])
 		}
 		return n
-	case parser.NamedType:
-	case parser.SumType:
-		for i := range n.Elements {
-			n.Elements[i] = r.resolve(env, n.Elements[i])
-		}
-		return n
-	case parser.SumTypeElement:
-		n.Name = defineTag(env, n.Name, n)
-		n.Type = r.resolve(env, n.Type)
-		return n
-	case parser.ForallType:
-		typeScope := env.AddScope()
-		n.TypeArg = defineTypeParam(typeScope, n.TypeArg, n)
-		n.Type = r.resolve(typeScope, n.Type)
-		return n
-	case parser.FunctionType:
-		n.Param = r.resolve(env, n.Param)
-		for i := range n.Arrows {
-			n.Arrows[i] = r.resolve(env, n.Arrows[i])
-		}
-		return n
+	// case parser.SumType:
+	// 	for i := range n.Elements {
+	// 		n.Elements[i] = r.resolve(env, n.Elements[i])
+	// 	}
+	// 	return n
+	// case parser.SumTypeElement:
+	// 	n.Name = defineTag(env, n.Name, n)
+	// 	n.Type = r.resolve(env, n.Type)
+	// 	return n
+	// case parser.ForallType:
+	// TODO: just use defineResolveTypeAnnotation for all types?
+	// return r.defineResolveTypeAnnotation(env, n, n)
+	// typeScope := env.AddScope()
+	// n.TypeArg = defineTypeParam(typeScope, n.TypeArg, n)
+	// n.Type = r.resolve(typeScope, n.Type)
+	// return n
+	// case parser.FunctionType:
+	// 	n.Param = r.resolve(env, n.Param)
+	// 	for i := range n.Arrows {
+	// 		n.Arrows[i] = r.resolve(env, n.Arrows[i])
+	// 	}
+	// 	return n
 	case parser.Field:
 		n.Name = r.defineDestructure(env, n.Name, n, func(id string) {})
 		n.Type = r.resolve(env, n.Type)
@@ -884,6 +985,37 @@ func (r *resolver) resolve(env *Env, n parser.Node) parser.Node {
 	case PackageName:
 	}
 	return n
+}
+
+func (r *resolver) resolveWithConstraint(env *Env, n parser.Node) parser.Node {
+	switch n := n.(type) {
+	case parser.NillableType:
+		n.Type = r.resolveWithConstraint(env, n.Type)
+		return n
+	case parser.ForallType:
+		forallScope := env.AddScope()
+		n.Type = r.resolveWithConstraint(forallScope, n.Type)
+		return n
+	case parser.ArrayType:
+		n.Type = r.resolveWithConstraint(env, n.Type)
+		return n
+	case parser.FunctionType:
+	case parser.Ident:
+		return r.resolve(env, n)
+	case parser.Tuple:
+		for i := range n.Elements {
+			n.Elements[i] = r.resolveWithConstraint(env, n.Elements[i])
+		}
+		return n
+	case parser.SelectorExpr:
+		return r.resolve(env, n)
+	case parser.NamedTypeArgument:
+		// right now assuming this is at the top-level
+		return defineTypeVar(env, n)
+	case parser.TypeApplication:
+	}
+	// actually consider selector as well
+	// what about nested withs?
 }
 
 func resolveUnresolved(env *Env, body parser.Node) parser.Node {
