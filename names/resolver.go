@@ -194,7 +194,7 @@ func (e *Env) LookupStack(name string) (d Definition, ok bool) {
 	return d, false
 }
 
-// add builtins to this
+// TODO: add builtins to this
 var Universe = &Env{
 	parent: nil,
 }
@@ -393,8 +393,12 @@ func (r *resolver) defineResolveTypeAnnotation(env *Env, n, ctx parser.Node) par
 	case parser.CommaElement:
 		n.X = r.defineResolveTypeAnnotation(env, n.X, ctx)
 		return n
+	case parser.TypeAnnotation:
+		n.Destructure = r.defineDestructure(env, n.Destructure, ctx, func(id string) {})
+		n.Type = r.defineResolveTypeAnnotation(env, n.Type, ctx)
+		return n
 	case parser.Field:
-		n.Name = r.resolve(env, n.Name)
+		n.Name = r.defineDestructure(env, n.Name, ctx, func(id string) {})
 		n.Type = r.defineResolveTypeAnnotation(env, n.Type, ctx)
 		// what's interesting is that n.Default can reference the function name and existing parameters
 		// TODO: make sure to test this.
@@ -442,6 +446,8 @@ func (r *resolver) defineResolveTypeAnnotation(env *Env, n, ctx parser.Node) par
 		n.Name = defineTag(env, n.Name, n)
 		n.Type = r.defineResolveTypeAnnotation(env, n.Type, ctx)
 		return n
+	case nil:
+		return nil
 	}
 	panic(fmt.Sprintf("unreachable %T", n))
 }
@@ -618,6 +624,21 @@ func visit1(n parser.Node, f visitorFunc) (parser.Node, bool) {
 		}
 		n.Name, quit = f(n.Name, rec)
 		return n, quit
+	case parser.Field:
+		if n.Name, quit = f(n.Name, rec); quit {
+			return n, quit
+		}
+		if n.Type, quit = f(n.Type, rec); quit {
+			return n, quit
+		}
+		n.Default, quit = f(n.Default, rec)
+		return n, quit
+	case parser.TypeAnnotation:
+		if n.Destructure, quit = f(n.Destructure, rec); quit {
+			return n, quit
+		}
+		n.Type, quit = f(n.Type, rec)
+		return n, quit
 	case Var:
 		n.OriginalIdent, quit = f(n.OriginalIdent, rec)
 		return n, quit
@@ -632,6 +653,9 @@ func visit1(n parser.Node, f visitorFunc) (parser.Node, bool) {
 		return n, quit
 	case Cons:
 		n.OriginalIdent, quit = f(n.OriginalIdent, rec)
+		return n, quit
+	case TypeVar:
+		n.OriginalTypeVar, quit = f(n.OriginalTypeVar, rec)
 		return n, quit
 	default:
 		return f(n, rec)
@@ -706,10 +730,10 @@ func (r *resolver) resolve(env *Env, n parser.Node) parser.Node {
 		return resolveUnresolved(env, n)
 	case parser.EmptyExpr:
 		return n
-	case parser.TypeAnnotation:
 	case parser.FunctionSignature:
 		// new plan: if a tvar doesn't exist in the env, it's a new type param.
-		n.Param = r.resolve(env, n.Param)
+		n.Param = r.defineResolveTypeAnnotation(env, n.Param, n)
+		// n.Param = r.resolve(env, n.Param)
 		for i := range n.Arrows {
 			n.Arrows[i] = r.defineResolveTypeAnnotation(env, n.Arrows[i], n)
 		}
@@ -728,10 +752,8 @@ func (r *resolver) resolve(env *Env, n parser.Node) parser.Node {
 		// for i := range n.Arrows {
 		// 	n.Arrows[i] = r.resolve(env, n.Arrows[i])
 		// }
-
-	case parser.Param:
-	case parser.Arrow:
-		n.Type = r.resolve(env, n.Type)
+	// case parser.Arrow:
+	// 	n.Type = r.resolve(env, n.Type)
 	case parser.LetFunction:
 		// what if someone write let _ x = 1?
 		// We don't have to do closure conversion cause the target supports them.
@@ -755,11 +777,8 @@ func (r *resolver) resolve(env *Env, n parser.Node) parser.Node {
 			delete(v.Undefined, id)
 		}
 		n.Name = r.defineDestructure(env, n.Name, n, func(string) {})
-		n.Signature = r.resolve(env, n.Signature)
-		sig := n.Signature.(parser.FunctionSignature)
 		bodyScope := env.AddScope()
-		sig.Param = r.defineDestructure(bodyScope, sig.Param, sig, func(id string) {})
-		n.Signature = sig
+		n.Signature = r.resolve(bodyScope, n.Signature)
 		n.Body = r.resolve(bodyScope, n.Body)
 		setIllegals(env, id, n.Body)
 		return n
@@ -847,10 +866,21 @@ func (r *resolver) resolve(env *Env, n parser.Node) parser.Node {
 		n.Name = defineType(env, n.Name, n)
 		bodyScope := env.AddScope()
 		for i := range n.TypeParams {
-			n.TypeParams[i] = defineTypeParam(bodyScope, n.TypeParams[i], n)
+			typeParam := n.TypeParams[i].(parser.NamedTypeParameter)
+			id := typeParam.TypeParam.Data
+			if localDef, ok := env.LookupLocal(id); ok {
+				n.TypeParams[i] = parser.Illegal{Node: localDef.Def, Msg: fmt.Sprintf("%s was already defined", id)}
+			} else {
+				d := NewDefinition(TypeVar{OriginalTypeVar: typeParam, Env: env}, n, NotForward)
+				env.AddSymbol(id, d)
+				n.TypeParams[i] = d.Def
+			}
 		}
+		// TODO: handle with clause
 		n.Body = r.defineResolveTypeAnnotation(bodyScope, n.Body, n)
 		// copy bodyScope.symbols to def.children
+		// does this make sense for tuples?
+		// i think so, for field access. not necessarily for A.b but for a.b
 		for k, v := range bodyScope.symbols {
 			if sym, ok := env.symbols[id]; ok {
 				if sym.Child == nil {
@@ -863,13 +893,11 @@ func (r *resolver) resolve(env *Env, n parser.Node) parser.Node {
 		return n
 		// setIllegals
 	case parser.Number:
-	case parser.NamedTypeParameter:
-	case parser.NamedTypeArgument:
-	case parser.TypeApplication:
-		for i := range n.Elements {
-			n.Elements[i] = r.resolve(env, n.Elements[i])
-		}
-		return n
+	// case parser.TypeApplication:
+	// 	for i := range n.Elements {
+	// 		n.Elements[i] = r.resolve(env, n.Elements[i])
+	// 	}
+	// 	return n
 	// case parser.SumType:
 	// 	for i := range n.Elements {
 	// 		n.Elements[i] = r.resolve(env, n.Elements[i])
@@ -892,10 +920,10 @@ func (r *resolver) resolve(env *Env, n parser.Node) parser.Node {
 	// 		n.Arrows[i] = r.resolve(env, n.Arrows[i])
 	// 	}
 	// 	return n
-	case parser.Field:
-		n.Name = r.defineDestructure(env, n.Name, n, func(id string) {})
-		n.Type = r.resolve(env, n.Type)
-		return n
+	// case parser.Field:
+	// 	n.Name = r.defineDestructure(env, n.Name, n, func(id string) {})
+	// 	n.Type = r.resolve(env, n.Type)
+	// 	return n
 	case parser.PrefixExpr:
 		n.X = r.resolve(env, n.X)
 		return n
@@ -987,36 +1015,47 @@ func (r *resolver) resolve(env *Env, n parser.Node) parser.Node {
 	return n
 }
 
-func (r *resolver) resolveWithConstraint(env *Env, n parser.Node) parser.Node {
-	switch n := n.(type) {
-	case parser.NillableType:
-		n.Type = r.resolveWithConstraint(env, n.Type)
-		return n
-	case parser.ForallType:
-		forallScope := env.AddScope()
-		n.Type = r.resolveWithConstraint(forallScope, n.Type)
-		return n
-	case parser.ArrayType:
-		n.Type = r.resolveWithConstraint(env, n.Type)
-		return n
-	case parser.FunctionType:
-	case parser.Ident:
-		return r.resolve(env, n)
-	case parser.Tuple:
-		for i := range n.Elements {
-			n.Elements[i] = r.resolveWithConstraint(env, n.Elements[i])
-		}
-		return n
-	case parser.SelectorExpr:
-		return r.resolve(env, n)
-	case parser.NamedTypeArgument:
-		// right now assuming this is at the top-level
-		return defineTypeVar(env, n)
-	case parser.TypeApplication:
-	}
-	// actually consider selector as well
-	// what about nested withs?
-}
+// func defineTypeParam(bodyScope *Env, n parser.Node, ctx parser.TypeDecl) parser.Node {
+// 	switch n := n.(type) {
+// 	case parser.NamedTypeParameter:
+// 	case parser.Tuple:
+// 	case parser.TypeApplication:
+// 	}
+// 	// namedtypeparam
+// 	// tupletypeparam
+// 	// TypeApplication
+// }
+
+// func (r *resolver) resolveWithConstraint(env *Env, n parser.Node) parser.Node {
+// 	switch n := n.(type) {
+// 	case parser.NillableType:
+// 		n.Type = r.resolveWithConstraint(env, n.Type)
+// 		return n
+// 	case parser.ForallType:
+// 		forallScope := env.AddScope()
+// 		n.Type = r.resolveWithConstraint(forallScope, n.Type)
+// 		return n
+// 	case parser.ArrayType:
+// 		n.Type = r.resolveWithConstraint(env, n.Type)
+// 		return n
+// 	case parser.FunctionType:
+// 	case parser.Ident:
+// 		return r.resolve(env, n)
+// 	case parser.Tuple:
+// 		for i := range n.Elements {
+// 			n.Elements[i] = r.resolveWithConstraint(env, n.Elements[i])
+// 		}
+// 		return n
+// 	case parser.SelectorExpr:
+// 		return r.resolve(env, n)
+// 	case parser.NamedTypeArgument:
+// 		// right now assuming this is at the top-level
+// 		return defineTypeVar(env, n)
+// 	case parser.TypeApplication:
+// 	}
+// 	// actually consider selector as well
+// 	// what about nested withs?
+// }
 
 func resolveUnresolved(env *Env, body parser.Node) parser.Node {
 	return visit(body, func(n parser.Node, rec visitorRec) (parser.Node, bool) {
@@ -1094,7 +1133,7 @@ func resolveUnresolved(env *Env, body parser.Node) parser.Node {
 		// 			return n, false
 		// 		}
 		// 	}
-		case nil, parser.Ident, parser.Number, parser.String, parser.StringPart, parser.FunctionSignature:
+		case nil, parser.Ident, parser.NamedTypeArgument, parser.NamedTypeParameter, parser.Number, parser.String, parser.StringPart, parser.FunctionSignature:
 			return n, false
 		}
 		return rec(n)

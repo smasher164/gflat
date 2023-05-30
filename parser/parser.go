@@ -1004,36 +1004,30 @@ func (p *parser) parseImportIndexExpr(x Node) Node {
 
 func (p *parser) parseTypeDecl() Node {
 	defer p.trace("parseTypeDecl")()
-
-	typeTok := p.tok
+	var typeDecl TypeDecl
+	typeDecl.Type = p.tok
 	p.next()
 	if p.tok.Type != lexer.Ident {
 		panic("missing identifier")
 	}
-	typeName := Ident{Name: p.tok}
+	typeDecl.Name = Ident{Name: p.tok}
 	p.next()
-	var typeParams []Node
-	for p.tok.Type == lexer.Ident || p.tok.Type == lexer.LeftParen || p.tok.Type == lexer.TypeArg {
-		typeParams = append(typeParams, p.parseTypeParameter(true))
+	for p.tok.Type == lexer.TypeArg {
+		typeDecl.TypeParams = append(typeDecl.TypeParams, p.parseNamedTypeParameter())
+	}
+	if p.tok.Type == lexer.With {
+		typeDecl.With = p.tok
+		p.next()
+		typeDecl.Clause = p.parseTypeBody(false, false, false)
 	}
 	if p.tok.Type != lexer.Equals {
 		// allow forward declarations
-		return TypeDecl{
-			Type:       typeTok,
-			Name:       typeName,
-			TypeParams: typeParams,
-		}
+		return typeDecl
 	}
-	equals := p.tok
+	typeDecl.Equal = p.tok
 	p.next()
-	typeBody := p.parseTypeBody(true, false, false)
-	return TypeDecl{
-		Type:       typeTok,
-		Name:       typeName,
-		TypeParams: typeParams,
-		Equal:      equals,
-		Body:       typeBody,
-	}
+	typeDecl.Body = p.parseTypeBody(true, false, false)
+	return typeDecl
 }
 
 // like a type parameter, but with foralls allowed, and no top-level restriction

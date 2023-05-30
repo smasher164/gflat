@@ -13,7 +13,9 @@ func Test(t *testing.T) {
 		"test.gf": &fstest.MapFile{
 			// TODO: make this an UnknownIdent
 			Data: []byte(`
-			type A
+			fun foo x: 'a {
+
+			}
 			`),
 			// Data: []byte(`
 			// let a = 2
