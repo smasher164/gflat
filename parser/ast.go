@@ -36,7 +36,6 @@ var (
 	_ Node = IfElse{}
 	_ Node = TypeDecl{}
 	_ Node = Number{}
-	_ Node = NamedTypeParameter{}
 	_ Node = NamedTypeArgument{}
 	_ Node = TypeApplication{}
 	_ Node = SumType{}
@@ -709,22 +708,6 @@ func (n Number) Span() lexer.Span {
 
 func (n Number) ASTString(depth int) string {
 	return fmt.Sprintf("Number %s", n.Lit)
-}
-
-type NamedTypeParameter struct {
-	TypeParam lexer.Token
-}
-
-func (n NamedTypeParameter) LeadingTrivia() []lexer.Token {
-	return n.TypeParam.LeadingTrivia
-}
-
-func (n NamedTypeParameter) Span() lexer.Span {
-	return n.TypeParam.Span
-}
-
-func (n NamedTypeParameter) ASTString(depth int) string {
-	return fmt.Sprintf("NamedTypeParameter %s", n.TypeParam)
 }
 
 type NamedTypeArgument struct {

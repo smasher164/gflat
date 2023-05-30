@@ -866,8 +866,8 @@ func (r *resolver) resolve(env *Env, n parser.Node) parser.Node {
 		n.Name = defineType(env, n.Name, n)
 		bodyScope := env.AddScope()
 		for i := range n.TypeParams {
-			typeParam := n.TypeParams[i].(parser.NamedTypeParameter)
-			id := typeParam.TypeParam.Data
+			typeParam := n.TypeParams[i].(parser.NamedTypeArgument)
+			id := typeParam.TypeArg.Data
 			if localDef, ok := env.LookupLocal(id); ok {
 				n.TypeParams[i] = parser.Illegal{Node: localDef.Def, Msg: fmt.Sprintf("%s was already defined", id)}
 			} else {
@@ -1133,7 +1133,7 @@ func resolveUnresolved(env *Env, body parser.Node) parser.Node {
 		// 			return n, false
 		// 		}
 		// 	}
-		case nil, parser.Ident, parser.NamedTypeArgument, parser.NamedTypeParameter, parser.Number, parser.String, parser.StringPart, parser.FunctionSignature:
+		case nil, parser.Ident, parser.NamedTypeArgument, parser.Number, parser.String, parser.StringPart, parser.FunctionSignature:
 			return n, false
 		}
 		return rec(n)

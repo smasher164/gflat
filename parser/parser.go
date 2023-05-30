@@ -49,58 +49,6 @@ func (p *parser) trace(msg string) func() {
 	return func() {}
 }
 
-// func (p *parser) tok() lexer.Token {
-// 	return p.buf[p.tokIndex]
-// }
-
-// func (p *parser) leadingTrivia() []lexer.Token {
-// 	return p.buf[p.leadingTriviaIndex:p.tokIndex]
-// }
-
-// func (p *parser) next() {
-// 	if len(p.buf) > 0 && p.tok().Type == lexer.EOF {
-// 		return
-// 	}
-// 	var t lexer.Token
-// 	li := len(p.buf)
-// 	for t = p.l.Next(); t.Type == lexer.Whitespace || t.Type == lexer.SingleLineComment; t = p.l.Next() {
-// 		p.buf = append(p.buf, t)
-// 	}
-// 	ti := len(p.buf)
-// 	p.buf = append(p.buf, t)
-// 	p.leadingTriviaIndex = li
-// 	p.tokIndex = ti
-// }
-
-// func (p *parser) parseFile() File {
-// 	var f File
-// 	p.next()
-// 	f.leadingTrivia = p.leadingTrivia()
-// 	if t := p.tok(); t.Type == lexer.Package {
-// 		f.PackageDecl = new(PackageDecl)
-// 		f.PackageDecl.Package = t
-// 		p.next()
-// 		t := p.tok()
-// 		trivia := p.leadingTrivia()
-// 		if t.Type == lexer.Ident {
-// 			f.PackageDecl.Name = Ident{
-// 				IsNode: IsNode{
-// 					leadingTrivia: trivia,
-// 				},
-// 				Name: t,
-// 			}
-// 		} else {
-// 			f.PackageDecl.Name = Illegal{
-// 				IsNode: IsNode{
-// 					leadingTrivia: trivia,
-// 				},
-// 				Msg: "expected identifier after package",
-// 			}
-// 		}
-// 	}
-// 	return f
-// }
-
 func ParseFile(fsys fs.FS, filename string) (Node, error) {
 	l, err := lexer.NewLexer(fsys, filename)
 	if err != nil {
@@ -354,8 +302,6 @@ func (p *parser) parseOperand() Node {
 		return p.parseIf()
 	case lexer.LeftParen:
 		return p.parseTuple()
-	// case lexer.LeftBracket:
-	// 	panic("TODO: parseIndex")
 	case lexer.LeftBrace:
 		p.next()
 		block := p.parseBody(lexer.RightBrace)
@@ -502,65 +448,11 @@ func (p *parser) parseBinaryExpr(minPrec int) Node {
 	return res
 }
 
-// func (p *parser) parseTypeAssignment() Node {
-// 	defer p.trace("parseTypeAssignment")()
-// 	if p.tok.Type != lexer.SingleQuote {
-// 		return p.parseTypeBody(false, false)
-// 	}
-// 	typeArg := p.parseNamedTypeArgument()
-// 	if p.tok.Type != lexer.Equals {
-// 		var forall ForallType
-// 		if p.tok.Type == lexer.Period {
-// 			forall.TypeArg = typeArg
-// 			forall.Period = p.tok
-// 			p.next()
-// 			forall.Type = p.parseTypeBody(false, false)
-// 			return forall
-// 		}
-// 		return p.parseTypeApplication(typeArg, false)
-// 	}
-// 	var ta BinaryExpr
-// 	ta.Left = typeArg
-// 	ta.Op = p.tok
-// 	p.next()
-// 	ta.Right = p.parseTypeBody(false, false)
-// 	return ta
-// }
-
 // parses the expression with clause where you can specialize types in an expression.
 // e.g. foo (2, 3) with 'a = int or foo (2, 3) with ('a = int, 'b = int)
 func (p *parser) parseWithApp() Node {
 	defer p.trace("parseWithApp")()
 	return p.parseTypeBody(false, true)
-
-	// if p.tok.Type == lexer.SingleQuote {
-	// 	return p.parseTypeAssignment()
-	// }
-	// if p.tok.Type != lexer.LeftParen {
-	// 	panic("expected (")
-	// }
-	// shouldInsert := p.shouldInsertAfter
-	// toksToCheck := p.afterToksToCheck
-	// p.shouldInsertDelimAfter(false)
-	// var tuple Tuple
-	// tuple.LeftParen = p.tok
-	// p.next()
-	// for p.tok.Type != lexer.RightParen && p.tok.Type != lexer.EOF {
-	// 	var elem TupleElement
-	// 	elem.X = p.parseTypeAssignment()
-	// 	if p.tok.Type == lexer.Comma {
-	// 		elem.Comma = p.tok
-	// 		p.next()
-	// 	}
-	// 	tuple.Elements = append(tuple.Elements, elem)
-	// }
-	// if p.tok.Type != lexer.RightParen {
-	// 	panic("missing right paren")
-	// }
-	// tuple.RightParen = p.tok
-	// p.shouldInsertDelimAfter(shouldInsert, toksToCheck...)
-	// p.next()
-	// return tuple
 }
 
 func getBinExp(x Node) *BinaryExpr {
@@ -597,34 +489,6 @@ func filterBinExp(x Node) Node {
 	}
 	return x
 }
-
-// filterBinExp checks that x is a BinaryExpr, and if so
-// whether the left and right subexpressions are interoperable.
-// if not, it wraps it in an Illegal.
-// invalid binary expressions are
-// func filterBinExp(x Node) Node {
-// 	top, ok := x.(BinaryExpr)
-// 	if !ok {
-// 		return x
-// 	}
-// 	if leftbe, ok := top.Left.(BinaryExpr); ok {
-// 		if !leftbe.Op.BinaryInteroperable(top.Op) {
-// 			return Illegal{
-// 				Node: x,
-// 				Msg:  fmt.Sprintf("cannot mix operators %q and %q in binary expression, consider adding parentheses", leftbe.Op.Type, top.Op.Type),
-// 			}
-// 		}
-// 	}
-// 	if rightbe, ok := top.Right.(BinaryExpr); ok {
-// 		if !rightbe.Op.BinaryInteroperable(top.Op) {
-// 			return Illegal{
-// 				Node: x,
-// 				Msg:  fmt.Sprintf("cannot mix operators %q and %q in binary expression, consider adding parentheses", top.Op.Type, rightbe.Op.Type),
-// 			}
-// 		}
-// 	}
-// 	return x
-// }
 
 func (p *parser) parseExpr() Node {
 	defer p.trace("parseExpr")()
@@ -1014,7 +878,7 @@ func (p *parser) parseTypeDecl() Node {
 	typeDecl.Name = Ident{Name: p.tok}
 	p.next()
 	for p.tok.Type == lexer.TypeArg {
-		typeDecl.TypeParams = append(typeDecl.TypeParams, p.parseNamedTypeParameter())
+		typeDecl.TypeParams = append(typeDecl.TypeParams, p.parseNamedTypeArgument())
 	}
 	if p.tok.Type == lexer.With {
 		typeDecl.With = p.tok
@@ -1074,31 +938,10 @@ func (p *parser) parseTupleTypeConstraint(parseAssignment bool) Node {
 	}
 }
 
-// func (p *parser) parseTypeApplicationInConstraint(name Node) Node {
-// 	defer p.trace("parseTypeApplication")()
-// 	var namedType NamedType
-// 	if name == nil {
-// 		namedType.Name = p.parseTypeName()
-// 	} else {
-// 		namedType.Name = name
-// 	}
-// 	for p.tok.Type == lexer.LeftParen || p.tok.Type == lexer.SingleQuote || p.tok.Type == lexer.Ident {
-// 		switch p.tok.Type {
-// 		case lexer.SingleQuote:
-// 			namedType.Args = append(namedType.Args, p.parseNamedTypeArgument())
-// 		case lexer.Ident:
-// 			namedType.Args = append(namedType.Args, p.parseTypeName())
-// 		case lexer.LeftParen:
-// 			namedType.Args = append(namedType.Args, p.parseTupleTypeConstraint(true))
-// 		}
-// 	}
-// 	return namedType
-// }
-
 func (p *parser) parseTypeParameter(topLevel bool) Node {
 	defer p.trace("parseTypeParameter")()
 	if p.tok.Type == lexer.TypeArg {
-		return p.parseNamedTypeParameter()
+		return p.parseNamedTypeArgument()
 	}
 	if p.tok.Type == lexer.LeftParen {
 		return p.parseTupleTypeParameter()
@@ -1145,15 +988,6 @@ func (p *parser) parseTupleTypeParameter() Node {
 }
 
 // 'a or '1
-func (p *parser) parseNamedTypeParameter() Node {
-	defer p.trace("parseNamedTypeParameter")()
-	typeArg := p.tok
-	p.next()
-	return NamedTypeParameter{
-		TypeParam: typeArg,
-	}
-}
-
 func (p *parser) parseNamedTypeArgument() Node {
 	defer p.trace("parseNamedTypeArgument")()
 	typeArg := p.tok
