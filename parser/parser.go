@@ -292,7 +292,7 @@ func (p *parser) parseFunctionSignature() FunctionSignature {
 		if p.tok.Type == lexer.Colon {
 			param.Colon = p.tok
 			p.next()
-			param.Type = p.parseTypeBodyWithoutWith(false, false, false)
+			param.Type = p.parseTypeBodyWithoutWith(false, false)
 		}
 		fun.Param = param
 	} else if p.tok.Type == lexer.LeftParen {
@@ -304,7 +304,7 @@ func (p *parser) parseFunctionSignature() FunctionSignature {
 		var arrow Arrow
 		arrow.Arrow = p.tok
 		p.next()
-		arrow.Type = p.parseTypeBodyWithoutWith(false, false, false)
+		arrow.Type = p.parseTypeBodyWithoutWith(false, false)
 		fun.Arrows = append(fun.Arrows, arrow)
 	}
 	if p.tok.Type == lexer.With {
@@ -491,7 +491,7 @@ func (p *parser) parseBinaryExpr(minPrec int) Node {
 		var rhs Node
 		switch op.Type {
 		case lexer.Colon:
-			rhs = p.parseTypeBody(false, false, false)
+			rhs = p.parseTypeBody(false, false)
 		case lexer.With:
 			rhs = p.parseWithApp()
 		default:
@@ -531,7 +531,7 @@ func (p *parser) parseBinaryExpr(minPrec int) Node {
 // e.g. foo (2, 3) with 'a = int or foo (2, 3) with ('a = int, 'b = int)
 func (p *parser) parseWithApp() Node {
 	defer p.trace("parseWithApp")()
-	return p.parseTypeBody(false, false, true)
+	return p.parseTypeBody(false, true)
 
 	// if p.tok.Type == lexer.SingleQuote {
 	// 	return p.parseTypeAssignment()
@@ -652,7 +652,7 @@ func (p *parser) parseDestructure() Node {
 	if p.tok.Type == lexer.Colon {
 		colon := p.tok
 		p.next()
-		typ := p.parseTypeBody(false, false, false)
+		typ := p.parseTypeBody(false, false)
 		des = TypeAnnotation{
 			Destructure: des,
 			Colon:       colon,
@@ -860,7 +860,7 @@ func (p *parser) parsePattern() Node {
 	if p.tok.Type == lexer.Colon {
 		colon := p.tok
 		p.next()
-		typ := p.parseTypeBody(false, false, false)
+		typ := p.parseTypeBody(false, false)
 		pat = TypeAnnotation{
 			Destructure: pat,
 			Colon:       colon,
@@ -1028,7 +1028,7 @@ func (p *parser) parseTypeDecl() Node {
 	}
 	typeDecl.Equal = p.tok
 	p.next()
-	typeDecl.Body = p.parseTypeBody(true, false, false)
+	typeDecl.Body = p.parseTypeBody(true, false)
 	return typeDecl
 }
 
@@ -1054,7 +1054,7 @@ func (p *parser) parseTupleTypeConstraint(parseAssignment bool) Node {
 			}
 			equals := p.tok
 			p.next()
-			elem.X = BinaryExpr{typeArg, equals, p.parseTypeBody(false, true, false)}
+			elem.X = BinaryExpr{typeArg, equals, p.parseTypeBody(false, false)}
 			if p.tok.Type == lexer.Comma {
 				elem.Comma = p.tok
 				p.next()
@@ -1163,7 +1163,7 @@ func (p *parser) parseNamedTypeArgument() Node {
 	}
 }
 
-func (p *parser) parseTypeApplication(name Node, parseConstraint, parseAssignment bool) Node {
+func (p *parser) parseTypeApplication(name Node, parseAssignment bool) Node {
 	defer p.trace("parseTypeApplication")()
 	var typeApp TypeApplication
 	if name == nil {
@@ -1172,9 +1172,9 @@ func (p *parser) parseTypeApplication(name Node, parseConstraint, parseAssignmen
 	typeApp.Elements = append(typeApp.Elements, name)
 	for beginsAnonType(p.tok.Type) {
 		if p.tok.Type == lexer.LeftParen {
-			typeApp.Elements = append(typeApp.Elements, p.parseTypeBody(false, parseConstraint, parseAssignment))
+			typeApp.Elements = append(typeApp.Elements, p.parseTypeBody(false, parseAssignment))
 		} else {
-			typeApp.Elements = append(typeApp.Elements, p.parseTypeBody(false, parseConstraint, false))
+			typeApp.Elements = append(typeApp.Elements, p.parseTypeBody(false, false))
 		}
 	}
 	if len(typeApp.Elements) == 1 {
@@ -1208,7 +1208,7 @@ func (p *parser) parseTypeName() Node {
 	return typeName
 }
 
-func (p *parser) parseArrayType(parseConstraint bool) Node {
+func (p *parser) parseArrayType() Node {
 	defer p.trace("parseArrayType")()
 	var array ArrayType
 	array.LeftBracket = p.tok
@@ -1222,11 +1222,11 @@ func (p *parser) parseArrayType(parseConstraint bool) Node {
 	}
 	array.RightBracket = p.tok
 	p.next()
-	array.Type = p.parseTypeBody(false, parseConstraint, false)
+	array.Type = p.parseTypeBody(false, false)
 	return array
 }
 
-func (p *parser) parseTypeBodyWithoutQuestionMark(parseSumType, parseConstraint, parseAssignment bool) Node {
+func (p *parser) parseTypeBodyWithoutQuestionMark(parseSumType, parseAssignment bool) Node {
 	defer p.trace("parseTypeBodyWithoutQuestionMark")()
 	// parse forall
 	if p.tok.Type == lexer.TypeArg {
@@ -1249,20 +1249,20 @@ func (p *parser) parseTypeBodyWithoutQuestionMark(parseSumType, parseConstraint,
 			forall.TypeArg = typeArg
 			forall.Period = p.tok
 			p.next()
-			forall.Type = p.parseTypeBody(parseSumType, parseConstraint, false)
+			forall.Type = p.parseTypeBody(parseSumType, false)
 			return forall
 		}
 		if beginsAnonType(p.tok.Type) {
-			return p.parseTypeApplication(typeArg, parseConstraint, parseAssignment)
+			return p.parseTypeApplication(typeArg, parseAssignment)
 		}
 		return typeArg
 	}
 	switch p.tok.Type {
 	case lexer.LeftParen:
-		if parseConstraint || parseAssignment {
+		if parseAssignment {
 			ttc := p.parseTupleTypeConstraint(parseAssignment)
 			if beginsAnonType(p.tok.Type) {
-				return p.parseTypeApplication(ttc, parseConstraint, parseAssignment)
+				return p.parseTypeApplication(ttc, parseAssignment)
 			} else {
 				return ttc
 			}
@@ -1272,16 +1272,16 @@ func (p *parser) parseTypeBodyWithoutQuestionMark(parseSumType, parseConstraint,
 		// Is this allowed inside a type constraint or assignment? I think so.
 		// A list type looks like [N]'t, where 't is the element type, and N is an optional constant length.
 		// maybe we pass parseConstraint down?
-		return p.parseArrayType(parseConstraint)
+		return p.parseArrayType()
 	case lexer.Ident:
-		return p.parseTypeApplication(nil, parseConstraint, parseAssignment)
+		return p.parseTypeApplication(nil, parseAssignment)
 	case lexer.Fun:
 		// if parseConstraint {
 		// 	// TODO: i think this is allowed in a type constraint
 		// 	panic("function types are not allowed in type constraints")
 		// }
 		// maybe we pass parseConstraint down?
-		return p.parseFunctionType(parseConstraint)
+		return p.parseFunctionType()
 	case lexer.Or:
 		if parseAssignment {
 			panic("sum types are not allowed in type assignments")
@@ -1289,17 +1289,14 @@ func (p *parser) parseTypeBodyWithoutQuestionMark(parseSumType, parseConstraint,
 		if !parseSumType {
 			panic("sum types are only allowed in type declarations")
 		}
-		if parseConstraint {
-			panic("sum types are not allowed in type constraints")
-		}
 		return p.parseSumType()
 	default:
 		panic("missing type body")
 	}
 }
 
-func (p *parser) parseTypeBodyWithoutWith(parseSumType, parseConstraint, parseAssignment bool) Node {
-	t := p.parseTypeBodyWithoutQuestionMark(parseSumType, parseConstraint, parseAssignment)
+func (p *parser) parseTypeBodyWithoutWith(parseSumType, parseAssignment bool) Node {
+	t := p.parseTypeBodyWithoutQuestionMark(parseSumType, parseAssignment)
 	// parse nillable type
 	if p.tok.Type == lexer.QuestionMark {
 		question := p.tok
@@ -1314,9 +1311,9 @@ func (p *parser) parseTypeBodyWithoutWith(parseSumType, parseConstraint, parseAs
 
 // TODO: TypeBody should have one sum case, and if it sees a |, it should parse more cases.
 // TODO: simplify with clauses to just be a comma-delimited list of type applications of named types and type variables inside tuples. oh and foralls.
-func (p *parser) parseTypeBody(parseSumType, parseConstraint, parseAssignment bool) Node {
+func (p *parser) parseTypeBody(parseSumType, parseAssignment bool) Node {
 	defer p.trace("parseTypeBody")()
-	tb := p.parseTypeBodyWithoutWith(parseSumType, parseConstraint, parseAssignment)
+	tb := p.parseTypeBodyWithoutWith(parseSumType, parseAssignment)
 	if p.tok.Type == lexer.With {
 		if parseAssignment {
 			panic("with clauses are not allowed in type assignments")
@@ -1427,7 +1424,7 @@ func (p *parser) parseSumType() Node {
 		sumElem.Name = Ident{Name: p.tok}
 		p.next()
 		if beginsAnonType(p.tok.Type) {
-			sumElem.Type = p.parseTypeBody(false, false, false)
+			sumElem.Type = p.parseTypeBody(false, false)
 		}
 		sum.Elements = append(sum.Elements, sumElem)
 	}
@@ -1472,7 +1469,7 @@ func (p *parser) parseTupleType() Node {
 				p.next()
 				field.Colon = p.tok
 				p.next()
-				field.Type = p.parseTypeBody(false, false, false)
+				field.Type = p.parseTypeBody(false, false)
 				if p.tok.Type == lexer.Equals {
 					field.Equals = p.tok
 					p.next()
@@ -1480,10 +1477,10 @@ func (p *parser) parseTupleType() Node {
 				}
 				elem.X = field
 			} else {
-				elem.X = p.parseTypeBody(false, false, false)
+				elem.X = p.parseTypeBody(false, false)
 			}
 		default:
-			elem.X = p.parseTypeBody(false, false, false)
+			elem.X = p.parseTypeBody(false, false)
 		}
 		p.shouldInsertDelimAfter(false)
 		if p.tok.Type == lexer.Comma {
@@ -1508,17 +1505,17 @@ func (p *parser) parseTupleType() Node {
 	}
 }
 
-func (p *parser) parseFunctionType(parseConstraint bool) Node {
+func (p *parser) parseFunctionType() Node {
 	defer p.trace("parseFunctionType")()
 	var fun FunctionType
 	fun.Fun = p.tok
 	p.next()
-	fun.Param = p.parseTypeBodyWithoutWith(false, parseConstraint, false)
+	fun.Param = p.parseTypeBodyWithoutWith(false, false)
 	for p.tok.Type == lexer.RightArrow {
 		var arrow Arrow
 		arrow.Arrow = p.tok
 		p.next()
-		arrow.Type = p.parseTypeBodyWithoutWith(false, parseConstraint, false)
+		arrow.Type = p.parseTypeBodyWithoutWith(false, false)
 		fun.Arrows = append(fun.Arrows, arrow)
 	}
 	return fun
@@ -1633,7 +1630,7 @@ func (p *parser) parseImplDecl() Node {
 	impl := ImplDecl{Impl: p.tok}
 	p.next()
 	impl.Name = p.parseTypeName()
-	impl.Args = p.parseTypeBodyWithoutWith(false, false, true)
+	impl.Args = p.parseTypeBodyWithoutWith(false, true)
 	if p.tok.Type == lexer.With {
 		impl.With = p.tok
 		p.next()
