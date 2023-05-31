@@ -235,7 +235,7 @@ func (a Token) ExactEq(b Token) bool {
 
 func (t Token) IsBinaryOp() bool {
 	switch t.Type {
-	case With, DotDot, Plus, Minus, Times, Divide, Remainder, LeftShift, RightShift, And, Or, Caret, LogicalAnd, LogicalOr, LogicalEquals, NotEquals, Equals, LessThan, LessThanEquals, GreaterThan, GreaterThanEquals, LeftArrow, Exponentiation, Colon:
+	case DotDot, Plus, Minus, Times, Divide, Remainder, LeftShift, RightShift, And, Or, Caret, LogicalAnd, LogicalOr, LogicalEquals, NotEquals, Equals, LessThan, LessThanEquals, GreaterThan, GreaterThanEquals, LeftArrow, Exponentiation, Colon:
 		return true
 	}
 	return false
@@ -275,7 +275,7 @@ func (t Token) Prec() int {
 	// }
 	// return 0
 	switch t.Type {
-	case Colon, With:
+	case Colon:
 		return 9
 	case Exponentiation:
 		return 8

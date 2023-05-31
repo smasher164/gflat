@@ -37,7 +37,6 @@ var (
 	_ Node = TypeDecl{}
 	_ Node = Number{}
 	_ Node = NamedTypeArgument{}
-	_ Node = TypeApplication{}
 	_ Node = SumType{}
 	_ Node = SumTypeElement{}
 	_ Node = ForallType{}
@@ -54,7 +53,6 @@ var (
 	_ Node = IndexExpr{}
 	_ Node = ImportDecl{}
 	_ Node = ImportDeclPackage{}
-	_ Node = With{}
 	_ Node = ImplDecl{}
 	_ Node = ArrayType{}
 	_ Node = NillableType{}
@@ -726,25 +724,6 @@ func (n NamedTypeArgument) ASTString(depth int) string {
 	return fmt.Sprintf("NamedTypeArgument %s", n.TypeArg)
 }
 
-type TypeApplication struct {
-	Elements []Node
-}
-
-func (t TypeApplication) LeadingTrivia() []lexer.Token {
-	if len(t.Elements) == 0 {
-		return nil
-	}
-	return leadingTriviaOf(t.Elements[0])
-}
-
-func (t TypeApplication) Span() lexer.Span {
-	return spanOf(t.Elements)
-}
-
-func (t TypeApplication) ASTString(depth int) string {
-	return fmt.Sprintf("TypeApplication\n%sElements: %s", indent(depth+1), printNodeSlice(depth+1, t.Elements))
-}
-
 type SumType struct {
 	Elements []Node
 }
@@ -1098,24 +1077,6 @@ func (i ImportDeclPackage) ASTString(depth int) string {
 		return fmt.Sprintf("ImportDeclPackage\n%sBinding: %s\n%sEquals: %s\n%sPath: %s", indent(depth+1), i.Binding.ASTString(depth+1), indent(depth+1), i.Equals, indent(depth+1), i.Path.ASTString(depth+1))
 	}
 	return fmt.Sprintf("ImportDeclPackage\n%sPath: %s", indent(depth+1), i.Path.ASTString(depth+1))
-}
-
-type With struct {
-	TypeBody Node
-	With     lexer.Token
-	Clause   Node
-}
-
-func (w With) LeadingTrivia() []lexer.Token {
-	return leadingTriviaOf(w.TypeBody)
-}
-
-func (w With) Span() lexer.Span {
-	return spanOf(w.TypeBody).Add(spanOf(w.Clause))
-}
-
-func (w With) ASTString(depth int) string {
-	return fmt.Sprintf("With\n%sTypeBody: %s\n%sWith: %s\n%sClause: %s", indent(depth+1), w.TypeBody.ASTString(depth+1), indent(depth+1), w.With, indent(depth+1), w.Clause.ASTString(depth+1))
 }
 
 type ImplDecl struct {

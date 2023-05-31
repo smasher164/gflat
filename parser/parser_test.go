@@ -162,7 +162,7 @@ func TestFile(t *testing.T) {
 			// | Maybe.None => 0
 			// `),
 			Data: []byte(`
-			let f : 'a. fun 'a -> 'a with Comparable 'a
+			let x : Map ('k = int)
 			`),
 		},
 	}

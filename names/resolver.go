@@ -432,7 +432,7 @@ func (r *resolver) defineResolveTypeAnnotation(env *Env, n, ctx parser.Node) par
 		return n
 	case parser.SelectorExpr:
 		return r.resolve(env, n)
-	case parser.TypeApplication:
+	case parser.CallExpr:
 		for i := range n.Elements {
 			n.Elements[i] = r.defineResolveTypeAnnotation(env, n.Elements[i], ctx)
 		}
@@ -1000,7 +1000,6 @@ func (r *resolver) resolve(env *Env, n parser.Node) parser.Node {
 				}
 			}
 		}
-	case parser.With:
 	case parser.ImplDecl:
 	case parser.ArrayType:
 	case parser.NillableType:
