@@ -162,7 +162,7 @@ func TestFile(t *testing.T) {
 			// | Maybe.None => 0
 			// `),
 			Data: []byte(`
-			let x : Map ('k = int)
+			let foo(x: 'a) with int = x
 			`),
 		},
 	}

@@ -10,126 +10,6 @@ import (
 	"golang.org/x/mod/module"
 )
 
-var (
-	_ parser.Node = Var{}
-	_ parser.Node = TypeName{}
-	_ parser.Node = UnresolvedIdent{}
-	_ parser.Node = PackageName{}
-	_ parser.Node = Cons{}
-	_ parser.Node = TypeVar{}
-)
-
-type TypeVar struct {
-	OriginalTypeVar parser.Node
-	// Reference to environment here.
-	Env *Env
-}
-
-func (v TypeVar) ASTString(depth int) string {
-	return fmt.Sprintf("TypeVar: %s", v.OriginalTypeVar.ASTString(depth))
-}
-
-func (v TypeVar) LeadingTrivia() []lexer.Token {
-	return v.OriginalTypeVar.LeadingTrivia()
-}
-
-func (v TypeVar) Span() lexer.Span {
-	return v.OriginalTypeVar.Span()
-}
-
-// Var is a variable Node that points into a Scope object.
-type Var struct {
-	OriginalIdent parser.Node
-	// Reference to environment here.
-	Env *Env
-}
-
-func (v Var) ASTString(depth int) string {
-	return fmt.Sprintf("Var: %s", v.OriginalIdent.ASTString(depth))
-}
-
-func (v Var) LeadingTrivia() []lexer.Token {
-	return v.OriginalIdent.LeadingTrivia()
-}
-
-func (v Var) Span() lexer.Span {
-	return v.OriginalIdent.Span()
-}
-
-type TypeName struct {
-	OriginalIdent parser.Node
-	// Reference to environment here.
-	Env *Env
-}
-
-func (v TypeName) ASTString(depth int) string {
-	return fmt.Sprintf("TypeName: %s", v.OriginalIdent.ASTString(depth))
-}
-
-func (v TypeName) LeadingTrivia() []lexer.Token {
-	return v.OriginalIdent.LeadingTrivia()
-}
-
-func (v TypeName) Span() lexer.Span {
-	return v.OriginalIdent.Span()
-}
-
-// UnresolvedIdent is an identifier that has not been resolved yet.
-type UnresolvedIdent struct {
-	OriginalIdent parser.Node
-	// Reference to environment here.
-	Env *Env
-}
-
-func (v UnresolvedIdent) ASTString(depth int) string {
-	return fmt.Sprintf("UnknownIdent: %s", v.OriginalIdent.ASTString(depth))
-}
-
-func (v UnresolvedIdent) LeadingTrivia() []lexer.Token {
-	return v.OriginalIdent.LeadingTrivia()
-}
-
-func (v UnresolvedIdent) Span() lexer.Span {
-	return v.OriginalIdent.Span()
-}
-
-type PackageName struct {
-	OriginalIdent parser.Node
-	// Reference to environment here.
-	Env *Env
-}
-
-func (v PackageName) ASTString(depth int) string {
-	return fmt.Sprintf("PackageName: %s", v.OriginalIdent.ASTString(depth))
-}
-
-func (v PackageName) LeadingTrivia() []lexer.Token {
-	return v.OriginalIdent.LeadingTrivia()
-}
-
-func (v PackageName) Span() lexer.Span {
-	return v.OriginalIdent.Span()
-}
-
-// Cons is a constructor Node that points into a Scope object.
-type Cons struct {
-	OriginalIdent parser.Node
-	// Reference to environment here.
-	Env *Env
-}
-
-func (c Cons) ASTString(depth int) string {
-	return fmt.Sprintf("Cons: %s", c.OriginalIdent.ASTString(depth))
-}
-
-func (c Cons) LeadingTrivia() []lexer.Token {
-	return c.OriginalIdent.LeadingTrivia()
-}
-
-func (c Cons) Span() lexer.Span {
-	return c.OriginalIdent.Span()
-}
-
 type ForwardStatus int
 
 const (
@@ -138,7 +18,7 @@ const (
 	ForwardResolved
 )
 
-// TODO: turn this into an interface so that the typechecker can extend it.
+// TODO: add Type field so we can do type checking.
 type Definition struct {
 	Def           parser.Node
 	Ctx           parser.Node         // additional context for error messages
@@ -163,9 +43,7 @@ type Env struct {
 
 func (e *Env) AddScope() *Env {
 	return &Env{
-		parent: e,
-		// packages: make(map[string]Definition),
-		// types:    make(map[string]Definition),
+		parent:  e,
 		symbols: make(map[string]Definition),
 	}
 }
@@ -234,11 +112,6 @@ func Select(x parser.Node, sel parser.Node) parser.Node {
 	}
 	// TODO: we are not processing tuple access right now. That should be done in type checking.
 	return parser.Illegal{Node: sel, Msg: fmt.Sprintf("cannot select from %T", x)}
-	// visit(x, func(n parser.Node, rec visitorRec) (parser.Node, bool) {
-	// 	switch n := n.(type) {
-	// 	case parser.Tuple:
-	// 	}
-	// })
 }
 
 func defineType(env *Env, nd, ctx parser.Node) parser.Node {
@@ -452,9 +325,6 @@ func (r *resolver) defineResolveTypeAnnotation(env *Env, n, ctx parser.Node) par
 	panic(fmt.Sprintf("unreachable %T", n))
 }
 
-type visitorRec func(parser.Node) (parser.Node, bool)
-type visitorFunc func(parser.Node, visitorRec) (parser.Node, bool)
-
 func setIllegals(env *Env, id string, n parser.Node) {
 	if id == "_" {
 		return
@@ -477,195 +347,11 @@ func setIllegals(env *Env, id string, n parser.Node) {
 				sym.Undefined[udef] = struct{}{}
 			}
 			return body, false
-		case nil, parser.Ident, parser.Number, parser.String, parser.StringPart, parser.FunctionSignature:
-			return body, false
+			// case nil, parser.Ident, parser.Number, parser.String, parser.StringPart, parser.FunctionSignature:
+			// 	return body, false
 		}
 		return rec(body) // if base cases aren't handled, this could recur forever.
 	})
-}
-
-func visit1(n parser.Node, f visitorFunc) (parser.Node, bool) {
-	rec := func(x parser.Node) (parser.Node, bool) { return visit1(x, f) }
-	var quit bool
-	switch n := n.(type) {
-	case parser.BinaryExpr:
-		if n.Left, quit = f(n.Left, rec); quit {
-			return n, quit
-		}
-		n.Right, quit = f(n.Right, rec)
-		return n, quit
-	case parser.Block:
-		for i := range n.Body {
-			if n.Body[i], quit = f(n.Body[i], rec); quit {
-				return n, quit
-			}
-		}
-		return n, quit
-	case parser.Tuple:
-		for i := range n.Elements {
-			if n.Elements[i], quit = f(n.Elements[i], rec); quit {
-				return n, quit
-			}
-		}
-		return n, quit
-	case parser.CommaElement:
-		n.X, quit = f(n.X, rec)
-		return n, quit
-	case parser.CallExpr:
-		for i := range n.Elements {
-			if n.Elements[i], quit = f(n.Elements[i], rec); quit {
-				return n, quit
-			}
-		}
-		return n, quit
-	case parser.LetFunction:
-		if n.Name, quit = f(n.Name, rec); quit {
-			return n, quit
-		}
-		if n.Signature, quit = f(n.Signature, rec); quit {
-			return n, quit
-		}
-		n.Body, quit = f(n.Body, rec)
-		return n, quit
-	case parser.Function:
-		if n.Name, quit = f(n.Name, rec); quit {
-			return n, quit
-		}
-		if n.Signature, quit = f(n.Signature, rec); quit {
-			return n, quit
-		}
-		n.Body, quit = f(n.Body, rec)
-		return n, quit
-	case parser.LetDecl:
-		if n.Destructure, quit = f(n.Destructure, rec); quit {
-			return n, quit
-		}
-		n.Rhs, quit = f(n.Rhs, rec)
-		return n, quit
-	case parser.VarDecl:
-		if n.Destructure, quit = f(n.Destructure, rec); quit {
-			return n, quit
-		}
-		n.Rhs, quit = f(n.Rhs, rec)
-		return n, quit
-	case parser.Stmt:
-		n.Stmt, quit = f(n.Stmt, rec)
-		return n, quit
-	case parser.Illegal:
-		n.Node, quit = f(n.Node, rec)
-		return n, quit
-	case parser.PrefixExpr:
-		n.X, quit = f(n.X, rec)
-		return n, quit
-	case parser.PostfixExpr:
-		n.X, quit = f(n.X, rec)
-		return n, quit
-	case parser.IfHeader:
-		n.Cond, quit = f(n.Cond, rec)
-		return n, quit
-	case parser.If:
-		if n.IfHeader, quit = f(n.IfHeader, rec); quit {
-			return n, quit
-		}
-		n.Body, quit = f(n.Body, rec)
-		return n, quit
-	case parser.IfElse:
-		if n.IfHeader, quit = f(n.IfHeader, rec); quit {
-			return n, quit
-		}
-		if n.Body, quit = f(n.Body, rec); quit {
-			return n, quit
-		}
-		n.ElseBody, quit = f(n.ElseBody, rec)
-		return n, quit
-	case parser.IfMatch:
-		if n.IfHeader, quit = f(n.IfHeader, rec); quit {
-			return n, quit
-		}
-		for i := range n.Cases {
-			if n.Cases[i], quit = f(n.Cases[i], rec); quit {
-				return n, quit
-			}
-		}
-		return n, quit
-	case parser.PatternCase:
-		if n.Pattern, quit = f(n.Pattern, rec); quit {
-			return n, quit
-		}
-		if n.Guard, quit = f(n.Guard, rec); quit {
-			return n, quit
-		}
-		n.Expr, quit = f(n.Expr, rec)
-		return n, quit
-	case parser.TypeDecl:
-		if n.Name, quit = f(n.Name, rec); quit {
-			return n, quit
-		}
-		// ignoring type params for now
-		// also ignoring default params for now
-		n.Body, quit = f(n.Body, rec)
-		return n, quit
-	case parser.SumType:
-		for i := range n.Elements {
-			if n.Elements[i], quit = f(n.Elements[i], rec); quit {
-				return n, quit
-			}
-		}
-		return n, quit
-	case parser.SumTypeElement:
-		if n.Name, quit = f(n.Name, rec); quit {
-			return n, quit
-		}
-		n.Type, quit = f(n.Type, rec)
-		return n, quit
-	case parser.SelectorExpr:
-		if n.X, quit = f(n.X, rec); quit {
-			return n, quit
-		}
-		n.Name, quit = f(n.Name, rec)
-		return n, quit
-	case parser.Field:
-		if n.Name, quit = f(n.Name, rec); quit {
-			return n, quit
-		}
-		if n.Type, quit = f(n.Type, rec); quit {
-			return n, quit
-		}
-		n.Default, quit = f(n.Default, rec)
-		return n, quit
-	case parser.TypeAnnotation:
-		if n.Destructure, quit = f(n.Destructure, rec); quit {
-			return n, quit
-		}
-		n.Type, quit = f(n.Type, rec)
-		return n, quit
-	case Var:
-		n.OriginalIdent, quit = f(n.OriginalIdent, rec)
-		return n, quit
-	case TypeName:
-		n.OriginalIdent, quit = f(n.OriginalIdent, rec)
-		return n, quit
-	case UnresolvedIdent:
-		n.OriginalIdent, quit = f(n.OriginalIdent, rec)
-		return n, quit
-	case PackageName:
-		n.OriginalIdent, quit = f(n.OriginalIdent, rec)
-		return n, quit
-	case Cons:
-		n.OriginalIdent, quit = f(n.OriginalIdent, rec)
-		return n, quit
-	case TypeVar:
-		n.OriginalTypeVar, quit = f(n.OriginalTypeVar, rec)
-		return n, quit
-	default:
-		return f(n, rec)
-	}
-}
-
-func visit(n parser.Node, f visitorFunc) parser.Node {
-	rec := func(x parser.Node) (parser.Node, bool) { return visit1(x, f) }
-	n, _ = f(n, rec)
-	return n
 }
 
 // This is basically like Go's top-level top-sort based name resolution, that handles cycles.
@@ -678,7 +364,12 @@ func resolveTopLevel(env *Env, n parser.Node) parser.Node {
 func (r *resolver) resolve(env *Env, n parser.Node) parser.Node {
 	switch n := n.(type) {
 	case parser.BinaryExpr:
-		n.Left = r.resolve(env, n.Left)
+		// add special case for 'a = type
+		if l, ok := n.Left.(parser.NamedTypeArgument); ok && n.Op.Type == lexer.Equals {
+			n.Left = UnresolvedTypeVar{OriginalTypeVar: l, Env: env}
+		} else {
+			n.Left = r.resolve(env, n.Left)
+		}
 		n.Right = r.resolve(env, n.Right)
 		return n
 	case parser.Stmt:
@@ -719,6 +410,12 @@ func (r *resolver) resolve(env *Env, n parser.Node) parser.Node {
 			return def.Def
 		}
 		return UnresolvedIdent{OriginalIdent: n, Env: env}
+	case parser.NamedTypeArgument:
+		def, ok := env.LookupStack(n.TypeArg.Data)
+		if ok {
+			return def.Def
+		}
+		return UnresolvedTypeVar{OriginalTypeVar: n, Env: env}
 	case parser.Illegal:
 		n.Node = r.resolve(env, n.Node)
 		return n // At what point do we reject programs with illegal nodes?
@@ -1110,30 +807,30 @@ func resolveUnresolved(env *Env, body parser.Node) parser.Node {
 		case parser.Illegal:
 			// no need to resolve subnodes of an illegal node.
 			return n, false
-		// case parser.Illegal:
-		// 	switch nid := n.Node.(type) {
-		// 	case parser.Ident:
-		// 		if def, ok := env.LookupLocal(nid.Name.Data); ok {
-		// 			// update this node to point to the definition.
-		// 			return def.Def, false
-		// 		} else {
-		// 			// should we modify the message to be that the ident is undefined?
-		// 			n.Msg = fmt.Sprintf("undefined: %s", nid.Name.Data)
-		// 			return n, false
-		// 		}
-		// 	case Var:
-		// 		id := nid.OriginalIdent.(parser.Ident).Name.Data
-		// 		if def, ok := env.LookupLocal(id); ok {
-		// 			// update this node to point to the definition.
-		// 			return def.Def, false
-		// 		} else {
-		// 			// should we modify the message to be that the ident is undefined?
-		// 			n.Msg = fmt.Sprintf("undefined: %s", id)
-		// 			return n, false
-		// 		}
-		// 	}
-		case nil, parser.Ident, parser.NamedTypeArgument, parser.Number, parser.String, parser.StringPart, parser.FunctionSignature:
-			return n, false
+			// case parser.Illegal:
+			// 	switch nid := n.Node.(type) {
+			// 	case parser.Ident:
+			// 		if def, ok := env.LookupLocal(nid.Name.Data); ok {
+			// 			// update this node to point to the definition.
+			// 			return def.Def, false
+			// 		} else {
+			// 			// should we modify the message to be that the ident is undefined?
+			// 			n.Msg = fmt.Sprintf("undefined: %s", nid.Name.Data)
+			// 			return n, false
+			// 		}
+			// 	case Var:
+			// 		id := nid.OriginalIdent.(parser.Ident).Name.Data
+			// 		if def, ok := env.LookupLocal(id); ok {
+			// 			// update this node to point to the definition.
+			// 			return def.Def, false
+			// 		} else {
+			// 			// should we modify the message to be that the ident is undefined?
+			// 			n.Msg = fmt.Sprintf("undefined: %s", id)
+			// 			return n, false
+			// 		}
+			// 	}
+			// case nil, parser.Ident, parser.NamedTypeArgument, parser.Number, parser.String, parser.StringPart, parser.FunctionSignature:
+			// 	return n, false
 		}
 		return rec(n)
 	})
@@ -1150,8 +847,8 @@ func findUndefined(nd parser.Node) (id string, found bool) {
 				return nd, true
 			}
 			return nd, false
-		case parser.Ident, parser.Number, parser.String, parser.StringPart, parser.FunctionSignature:
-			return nd, false
+			// case parser.Ident, parser.Number, parser.String, parser.StringPart, parser.FunctionSignature:
+			// 	return nd, false
 		}
 		return rec(nd)
 	})

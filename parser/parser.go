@@ -947,6 +947,7 @@ func (p *parser) parseTypeApplication(name Node) Node {
 	}
 	typeApp.Elements = append(typeApp.Elements, name)
 	for beginsAnonType(p.tok.Type) {
+		// berry stay mad
 		typeApp.Elements = append(typeApp.Elements, p.parseTypeBody(false, true)) // assignments are allowed on things that are applied
 	}
 	if len(typeApp.Elements) == 1 {
