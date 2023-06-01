@@ -97,7 +97,16 @@ func Select(x parser.Node, sel parser.Node) parser.Node {
 	switch x := x.(type) {
 	case TypeName:
 		id := x.OriginalIdent.(parser.Ident).Name.Data
-		selID := sel.(parser.Ident).Name.Data
+		// this part will fail if sel is a type arg
+		var selID string
+		switch sel := sel.(type) {
+		case parser.Ident:
+			selID = sel.Name.Data
+		case parser.TypeArg:
+			selID = sel.TypeArg.Data
+		default:
+			panic(fmt.Sprintf("invalid selector %T", sel))
+		}
 		ch := x.Env.symbols[id].Child.symbols[selID].Def
 		// ch := x.Env.symbols[id].Children[selID]
 		if ch == nil {
@@ -242,18 +251,25 @@ func (r *resolver) defineDestructure(env *Env, n, ctx parser.Node, f func(string
 		return n
 	case parser.CommaElement:
 		return r.defineDestructure(env, n.X, ctx, f)
-	// case parser.TypeAnnotation:
-	// 	n.Destructure = r.defineDestructure(env, n.Destructure, ctx, f)
-	// 	n.Type = r.resolve(env, n.Type)
-	// 	return n
 	case parser.TypeAnnotation:
 		n.Destructure = r.defineDestructure(env, n.Destructure, ctx, f)
-		if n.Type != nil {
-			n.Type = r.defineResolveTypeAnnotation(env, n.Type, ctx)
-		}
+		n.Type = r.defineResolveTypeAnnotation(env, n.Type, ctx)
 		return n
 	}
 	panic(fmt.Sprintf("unreachable %T", n))
+}
+
+func (r *resolver) resolveTypeAssignment(env *Env, elem parser.Tuple, lastCaller, ctx parser.Node) parser.Node {
+	for i := range elem.Elements {
+		comm := elem.Elements[i].(parser.CommaElement)
+		binExp := comm.X.(parser.BinaryExpr)
+		typeArg := binExp.Left.(parser.TypeArg)
+		binExp.Left = Select(lastCaller, typeArg)
+		binExp.Right = r.defineResolveTypeAnnotation(env, binExp.Right, ctx)
+		comm.X = binExp
+		elem.Elements[i] = comm
+	}
+	return elem
 }
 
 func (r *resolver) defineResolveTypeAnnotation(env *Env, n, ctx parser.Node) parser.Node {
@@ -263,6 +279,11 @@ func (r *resolver) defineResolveTypeAnnotation(env *Env, n, ctx parser.Node) par
 			n.Elements[i] = r.defineResolveTypeAnnotation(env, n.Elements[i], ctx)
 		}
 		return n
+	case parser.BinaryExpr:
+		// 'a = Type
+		// the type param here refers to the type params defined by the caller in the type application.
+		// So if we had type Foo 'a = ...
+		// and we do Foo ('a = int), we have to look up Foo to find the type param being referenced.
 	case parser.CommaElement:
 		n.X = r.defineResolveTypeAnnotation(env, n.X, ctx)
 		return n
@@ -277,7 +298,7 @@ func (r *resolver) defineResolveTypeAnnotation(env *Env, n, ctx parser.Node) par
 		// TODO: make sure to test this.
 		n.Default = r.resolve(env, n.Default)
 		return n
-	case parser.NamedTypeArgument:
+	case parser.TypeArg:
 		if d, ok := env.LookupStack(n.TypeArg.Data); ok {
 			return d.Def
 		}
@@ -306,8 +327,34 @@ func (r *resolver) defineResolveTypeAnnotation(env *Env, n, ctx parser.Node) par
 	case parser.SelectorExpr:
 		return r.resolve(env, n)
 	case parser.CallExpr:
+		var lastCaller parser.Node
 		for i := range n.Elements {
-			n.Elements[i] = r.defineResolveTypeAnnotation(env, n.Elements[i], ctx)
+			// if n.Elements[i] is an ident or selector expr, then we need to resolve it.
+			// then keep track of it until we hit a tuple with a binary expr assignment to a TypeArg
+			// then we replace the TypeArg with the resolved TypeVar.
+			// if it's not there, then it's an UnresolvedTypeVar.
+			switch elem := n.Elements[i].(type) {
+			case parser.Ident:
+				n.Elements[i] = r.resolve(env, elem)
+				lastCaller = n.Elements[i]
+			case parser.SelectorExpr:
+				n.Elements[i] = r.resolve(env, elem)
+				lastCaller = n.Elements[i]
+			case parser.Tuple:
+				if len(elem.Elements) >= 1 {
+					if comm, ok := elem.Elements[0].(parser.CommaElement); ok {
+						if binExp, ok := comm.X.(parser.BinaryExpr); ok {
+							if _, ok := binExp.Left.(parser.TypeArg); ok && binExp.Op.Type == lexer.Equals {
+								n.Elements[i] = r.resolveTypeAssignment(env, elem, lastCaller, ctx)
+								break
+							}
+						}
+					}
+				}
+				n.Elements[i] = r.defineResolveTypeAnnotation(env, elem, ctx)
+			default:
+				n.Elements[i] = r.defineResolveTypeAnnotation(env, elem, ctx)
+			}
 		}
 		return n
 	case parser.SumType:
@@ -355,7 +402,7 @@ func setIllegals(env *Env, id string, n parser.Node) {
 }
 
 // This is basically like Go's top-level top-sort based name resolution, that handles cycles.
-// Completely order independent.
+// Completely order-independent.
 // Only declarations are allowed with the value restriction. No side effects.
 func resolveTopLevel(env *Env, n parser.Node) parser.Node {
 	panic("TODO")
@@ -365,7 +412,7 @@ func (r *resolver) resolve(env *Env, n parser.Node) parser.Node {
 	switch n := n.(type) {
 	case parser.BinaryExpr:
 		// add special case for 'a = type
-		if l, ok := n.Left.(parser.NamedTypeArgument); ok && n.Op.Type == lexer.Equals {
+		if l, ok := n.Left.(parser.TypeArg); ok && n.Op.Type == lexer.Equals {
 			n.Left = UnresolvedTypeVar{OriginalTypeVar: l, Env: env}
 		} else {
 			n.Left = r.resolve(env, n.Left)
@@ -410,7 +457,7 @@ func (r *resolver) resolve(env *Env, n parser.Node) parser.Node {
 			return def.Def
 		}
 		return UnresolvedIdent{OriginalIdent: n, Env: env}
-	case parser.NamedTypeArgument:
+	case parser.TypeArg:
 		def, ok := env.LookupStack(n.TypeArg.Data)
 		if ok {
 			return def.Def
@@ -563,13 +610,13 @@ func (r *resolver) resolve(env *Env, n parser.Node) parser.Node {
 		n.Name = defineType(env, n.Name, n)
 		bodyScope := env.AddScope()
 		for i := range n.TypeParams {
-			typeParam := n.TypeParams[i].(parser.NamedTypeArgument)
+			typeParam := n.TypeParams[i].(parser.TypeArg)
 			id := typeParam.TypeArg.Data
-			if localDef, ok := env.LookupLocal(id); ok {
+			if localDef, ok := bodyScope.LookupLocal(id); ok {
 				n.TypeParams[i] = parser.Illegal{Node: localDef.Def, Msg: fmt.Sprintf("%s was already defined", id)}
 			} else {
-				d := NewDefinition(TypeVar{OriginalTypeVar: typeParam, Env: env}, n, NotForward)
-				env.AddSymbol(id, d)
+				d := NewDefinition(TypeVar{OriginalTypeVar: typeParam, Env: bodyScope}, n, NotForward)
+				bodyScope.AddSymbol(id, d)
 				n.TypeParams[i] = d.Def
 			}
 		}
@@ -625,8 +672,30 @@ func (r *resolver) resolve(env *Env, n parser.Node) parser.Node {
 		n.X = r.resolve(env, n.X)
 		return n
 	case parser.CallExpr:
+		var lastCaller parser.Node
 		for i := range n.Elements {
-			n.Elements[i] = r.resolve(env, n.Elements[i])
+			switch elem := n.Elements[i].(type) {
+			case parser.Ident:
+				n.Elements[i] = r.resolve(env, elem)
+				lastCaller = n.Elements[i]
+			case parser.SelectorExpr:
+				n.Elements[i] = r.resolve(env, elem)
+				lastCaller = n.Elements[i]
+			case parser.Tuple:
+				if len(elem.Elements) >= 1 {
+					if comm, ok := elem.Elements[0].(parser.CommaElement); ok {
+						if binExp, ok := comm.X.(parser.BinaryExpr); ok {
+							if _, ok := binExp.Left.(parser.TypeArg); ok && binExp.Op.Type == lexer.Equals {
+								n.Elements[i] = r.resolveTypeAssignment(env, elem, lastCaller, n)
+								break
+							}
+						}
+					}
+				}
+				n.Elements[i] = r.resolve(env, elem)
+			default:
+				n.Elements[i] = r.resolve(env, elem)
+			}
 			// check if caller references an ident whose len(def.Undefined) != 0
 			// if so, error.
 			nd := n.Elements[i]

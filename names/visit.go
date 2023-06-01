@@ -5,7 +5,7 @@ import "github.com/smasher164/gflat/parser"
 // i may not need this after all
 func isLeaf(n parser.Node) bool {
 	switch n.(type) {
-	case nil, parser.Ident, parser.EmptyExpr, parser.Number, parser.NamedTypeArgument, parser.StringPart, parser.String:
+	case nil, parser.Ident, parser.EmptyExpr, parser.Number, parser.TypeArg, parser.StringPart, parser.String:
 		return true
 	}
 	return false

@@ -36,7 +36,7 @@ var (
 	_ Node = IfElse{}
 	_ Node = TypeDecl{}
 	_ Node = Number{}
-	_ Node = NamedTypeArgument{}
+	_ Node = TypeArg{}
 	_ Node = SumType{}
 	_ Node = SumTypeElement{}
 	_ Node = ForallType{}
@@ -708,20 +708,20 @@ func (n Number) ASTString(depth int) string {
 	return fmt.Sprintf("Number %s", n.Lit)
 }
 
-type NamedTypeArgument struct {
+type TypeArg struct {
 	TypeArg lexer.Token
 }
 
-func (n NamedTypeArgument) LeadingTrivia() []lexer.Token {
+func (n TypeArg) LeadingTrivia() []lexer.Token {
 	return n.TypeArg.LeadingTrivia
 }
 
-func (n NamedTypeArgument) Span() lexer.Span {
+func (n TypeArg) Span() lexer.Span {
 	return n.TypeArg.Span
 }
 
-func (n NamedTypeArgument) ASTString(depth int) string {
-	return fmt.Sprintf("NamedTypeArgument %s", n.TypeArg)
+func (n TypeArg) ASTString(depth int) string {
+	return n.TypeArg.String()
 }
 
 type SumType struct {

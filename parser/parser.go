@@ -292,6 +292,10 @@ func (p *parser) parseFun() Node {
 	return fun
 }
 
+// TODO: should we accommodate other kinds of types?
+// []'t
+// T?
+// () tuple type will be hard to parse
 func (p *parser) parseOperand() Node {
 	defer p.trace("parseOperand")()
 	switch tok := p.tok; tok.Type {
@@ -932,9 +936,12 @@ func (p *parser) parseTupleTypeConstraint(parseAssignment bool) Node {
 // 'a or '1
 func (p *parser) parseNamedTypeArgument() Node {
 	defer p.trace("parseNamedTypeArgument")()
+	if p.tok.Type != lexer.TypeArg {
+		panic("expected type argument")
+	}
 	typeArg := p.tok
 	p.next()
-	return NamedTypeArgument{
+	return TypeArg{
 		TypeArg: typeArg,
 	}
 }
@@ -1020,12 +1027,13 @@ func (p *parser) parseTypeBodyWithoutQuestionMark(parseSumType, parseAssignment 
 	switch p.tok.Type {
 	case lexer.LeftParen:
 		if parseAssignment {
-			ttc := p.parseTupleTypeConstraint(parseAssignment)
-			if beginsAnonType(p.tok.Type) {
-				return p.parseTypeApplication(ttc)
-			} else {
-				return ttc
-			}
+			return p.parseTupleTypeConstraint(parseAssignment)
+			// ttc := p.parseTupleTypeConstraint(parseAssignment)
+			// if beginsAnonType(p.tok.Type) {
+			// 	return p.parseTypeApplication(ttc)
+			// } else {
+			// 	return ttc
+			// }
 		}
 		return p.parseTupleType()
 	case lexer.LeftBracket:
