@@ -14,11 +14,11 @@ func Test(t *testing.T) {
 			// TODO: make this an UnknownIdent
 			Data: []byte(`
 			type Foo 'a = ()
-			let x = Foo ('a = int)
+			Foo ('a = int, 'b = bool)
 			`),
 			// Data: []byte(`
 			// let a = 2
-			// ('a = 1)
+			// Foo ('a = 1)
 			// `),
 		},
 	}

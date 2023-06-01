@@ -369,7 +369,7 @@ func (r *resolver) defineResolveTypeAnnotation(env *Env, n, ctx parser.Node) par
 	case nil:
 		return nil
 	}
-	panic(fmt.Sprintf("unreachable %T", n))
+	return parser.Illegal{Node: n, Msg: "not a valid type"}
 }
 
 func setIllegals(env *Env, id string, n parser.Node) {
@@ -412,8 +412,9 @@ func (r *resolver) resolve(env *Env, n parser.Node) parser.Node {
 	switch n := n.(type) {
 	case parser.BinaryExpr:
 		// add special case for 'a = type
-		if l, ok := n.Left.(parser.TypeArg); ok && n.Op.Type == lexer.Equals {
-			n.Left = UnresolvedTypeVar{OriginalTypeVar: l, Env: env}
+		if _, ok := n.Left.(parser.TypeArg); ok && n.Op.Type == lexer.Equals {
+			// n.Left = UnresolvedTypeVar{OriginalTypeVar: l, Env: env}
+			n.Left = parser.Illegal{Node: n.Left, Msg: "cannot assign type variable outside of an application"}
 		} else {
 			n.Left = r.resolve(env, n.Left)
 		}
