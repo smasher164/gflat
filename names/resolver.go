@@ -492,6 +492,7 @@ func (r *resolver) resolve(env *Env, n parser.Node) parser.Node {
 			n.Arrows[i] = r.defineResolveTypeAnnotation(env, true, n.Arrows[i], n)
 		}
 		// TODO: handle with clause
+		n.Clause = r.defineResolveTypeAnnotation(env, false, n.Clause, n)
 		// n.Clause = r.resolve(env, n.Clause)
 		return n
 
@@ -631,12 +632,14 @@ func (r *resolver) resolve(env *Env, n parser.Node) parser.Node {
 			if localDef, ok := bodyScope.LookupLocal(id); ok {
 				n.TypeParams[i] = parser.Illegal{Node: localDef.Def, Msg: fmt.Sprintf("%s was already defined", id)}
 			} else {
+				// params are *always* defined for type decls
 				d := NewDefinition(TypeVar{OriginalTypeVar: typeParam, Env: bodyScope}, n, NotForward)
 				bodyScope.AddSymbol(id, d)
 				n.TypeParams[i] = d.Def
 			}
 		}
 		// TODO: handle with clause
+		n.Clause = r.defineResolveTypeAnnotation(bodyScope, false, n.Clause, n)
 		n.Body = r.defineResolveTypeAnnotation(bodyScope, false, n.Body, n)
 		// copy bodyScope.symbols to def.children
 		// does this make sense for tuples?

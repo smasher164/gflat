@@ -1116,6 +1116,8 @@ func (p *parser) parseWithClauseApplication(name Node) Node {
 	return app
 }
 
+// TODO: should trait constraints allow the TraitName ('a = 'b) syntax?
+// i.e. should trait constraints allow type assignments?
 func (p *parser) parseWithClause() Node {
 	defer p.trace("parseWithClause")()
 	// A with clause can have
