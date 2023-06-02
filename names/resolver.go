@@ -319,6 +319,9 @@ func (r *resolver) defineResolveTypeAnnotation(env *Env, define bool, n, ctx par
 			n.Arrows[i] = r.defineResolveTypeAnnotation(env, define, n.Arrows[i], ctx)
 		}
 		return n
+	case parser.Arrow:
+		n.Type = r.defineResolveTypeAnnotation(env, define, n.Type, ctx)
+		return n
 	case parser.NillableType:
 		n.Type = r.defineResolveTypeAnnotation(env, define, n.Type, ctx)
 		return n
