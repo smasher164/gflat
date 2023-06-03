@@ -491,7 +491,6 @@ func (r *resolver) resolve(env *Env, n parser.Node) parser.Node {
 		for i := range n.Arrows {
 			n.Arrows[i] = r.defineResolveTypeAnnotation(env, true, n.Arrows[i], n)
 		}
-		// TODO: handle with clause
 		n.Clause = r.defineResolveTypeAnnotation(env, false, n.Clause, n)
 		// n.Clause = r.resolve(env, n.Clause)
 		return n
@@ -619,10 +618,6 @@ func (r *resolver) resolve(env *Env, n parser.Node) parser.Node {
 		// 	//
 		// })
 	case parser.TypeDecl:
-		// TODO: deal with type params
-		// TODO: deal with default params
-		// TODO: deal with With clauses
-		// n.Name = defineDestructure(env, n.Name, n, func(string) {})
 		id := n.Name.(parser.Ident).Name.Data
 		n.Name = defineType(env, n.Name, n)
 		bodyScope := env.AddScope()
@@ -638,7 +633,6 @@ func (r *resolver) resolve(env *Env, n parser.Node) parser.Node {
 				n.TypeParams[i] = d.Def
 			}
 		}
-		// TODO: handle with clause
 		n.Clause = r.defineResolveTypeAnnotation(bodyScope, false, n.Clause, n)
 		n.Body = r.defineResolveTypeAnnotation(bodyScope, false, n.Body, n)
 		// copy bodyScope.symbols to def.children
@@ -786,6 +780,12 @@ func (r *resolver) resolve(env *Env, n parser.Node) parser.Node {
 			}
 		}
 	case parser.ImplDecl:
+		n.Name = r.resolve(env, n.Name)
+		implScope := env.AddScope()
+		n.Args = r.defineResolveTypeAnnotation(implScope, true, n.Args, n)
+		n.Clause = r.defineResolveTypeAnnotation(implScope, false, n.Clause, n)
+		n.Body = r.resolve(implScope, n.Body)
+		return n
 	case parser.ArrayType:
 	case parser.NillableType:
 		n.Type = r.resolve(env, n.Type)

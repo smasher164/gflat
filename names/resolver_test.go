@@ -12,13 +12,18 @@ func Test(t *testing.T) {
 	fsys := fstest.MapFS{
 		"test.gf": &fstest.MapFile{
 			// TODO: make this an UnknownIdent
-			Data: []byte(`
-			fun foo(x: 'a) with Trait 'a => 1
-			`),
+			// Data: []byte(`
+			// fun foo(x: 'a) with Trait 'a => 1
+			// `),
 			// Data: []byte(`
 			// let a = 2
 			// Foo ('a = 1)
 			// `),
+			Data: []byte(`
+			impl Foo 'a with 'a = (
+				foo = fun x => x,
+			)
+			`),
 		},
 	}
 	// l, err := lexer.NewLexer("test.txt")
