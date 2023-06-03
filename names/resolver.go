@@ -303,7 +303,6 @@ func (r *resolver) defineResolveTypeAnnotation(env *Env, define bool, n, ctx par
 			return d.Def
 		}
 		if define {
-			// TODO: is this being called when we're not at a function or type definition?
 			d := NewDefinition(TypeVar{OriginalTypeVar: n, Env: env}, ctx, NotForward)
 			env.AddSymbol(n.TypeArg.Data, d)
 			return d.Def
