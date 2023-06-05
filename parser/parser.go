@@ -139,6 +139,15 @@ func (p *parser) parseFile() (f File) {
 	return f
 }
 
+// func (p *parser) parseLetFun() Node {
+// 	defer p.trace("parseLetFun")()
+// 	var letFun LetFunction
+// 	for p.tok.Type == lexer.TypeArg {
+// 		letFun.TypeParams = append(letFun.TypeParams, p.parseNamedTypeArgument())
+// 	}
+// 	if p.tok.Type == lexer.Ident {
+// }
+
 // TODO: rework LetDecl to handle function and :=
 // LetDecl = "let" RestDecl
 // TOOD: add let f x = x syntax
@@ -146,10 +155,23 @@ func (p *parser) parseLetDecl() Node {
 	defer p.trace("parseLetDecl")()
 	letTok := p.tok
 	p.next()
+	var letFun LetFunction
+	if p.tok.Type == lexer.TypeArg {
+		for p.tok.Type == lexer.TypeArg {
+			letFun.TypeParams = append(letFun.TypeParams, p.parseNamedTypeArgument())
+		}
+		if p.tok.Type != lexer.Ident {
+			panic("expected identifier after type arguments")
+		}
+		switch p.peek().Type {
+		case lexer.Ident, lexer.LeftParen:
+		default:
+			panic("expected identifier or ( after function name")
+		}
+	}
 	if p.tok.Type == lexer.Ident {
 		switch p.peek().Type {
 		case lexer.Ident, lexer.LeftParen:
-			var letFun LetFunction
 			letFun.Name = Ident{Name: p.tok}
 			p.next()
 			letFun.Signature = p.parseFunctionSignature()
@@ -267,6 +289,9 @@ func (p *parser) parseFun() Node {
 	defer p.trace("parseFun")()
 	fun := Function{Fun: p.tok}
 	p.next()
+	for p.tok.Type == lexer.TypeArg {
+		fun.TypeParams = append(fun.TypeParams, p.parseNamedTypeArgument())
+	}
 	if p.tok.Type == lexer.Ident {
 		switch p.peek().Type {
 		case lexer.Ident, lexer.LeftParen:

@@ -376,6 +376,11 @@ func visit2(n parser.Node, f visitorRec) (parser.Node, bool) {
 		}
 		return n, quit
 	case parser.LetFunction:
+		for i := range n.TypeParams {
+			if n.TypeParams[i], quit = f(n.TypeParams[i]); quit {
+				return n, quit
+			}
+		}
 		if n.Name, quit = f(n.Name); quit {
 			return n, quit
 		}
@@ -385,6 +390,11 @@ func visit2(n parser.Node, f visitorRec) (parser.Node, bool) {
 		n.Body, quit = f(n.Body)
 		return n, quit
 	case parser.Function:
+		for i := range n.TypeParams {
+			if n.TypeParams[i], quit = f(n.TypeParams[i]); quit {
+				return n, quit
+			}
+		}
 		if n.Name, quit = f(n.Name); quit {
 			return n, quit
 		}
@@ -557,10 +567,10 @@ func visit2(n parser.Node, f visitorRec) (parser.Node, bool) {
 	case Cons:
 		n.OriginalIdent, quit = f(n.OriginalIdent)
 		return n, quit
-	case TypeVar:
+	case ResolvedTypeArg:
 		n.OriginalTypeVar, quit = f(n.OriginalTypeVar)
 		return n, quit
-	case UnresolvedTypeVar:
+	case UnresolvedTypeArg:
 		n.OriginalTypeVar, quit = f(n.OriginalTypeVar)
 		return n, quit
 	default:

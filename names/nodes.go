@@ -13,8 +13,8 @@ var (
 	_ parser.Node = UnresolvedIdent{}
 	_ parser.Node = PackageName{}
 	_ parser.Node = Cons{}
-	_ parser.Node = TypeVar{}
-	_ parser.Node = UnresolvedTypeVar{}
+	_ parser.Node = ResolvedTypeArg{}
+	_ parser.Node = UnresolvedTypeArg{}
 )
 
 // Var is a variable Node that points into a Scope object.
@@ -110,38 +110,38 @@ func (c Cons) Span() lexer.Span {
 	return c.OriginalIdent.Span()
 }
 
-type TypeVar struct {
+type ResolvedTypeArg struct {
 	OriginalTypeVar parser.Node
 	// Reference to environment here.
 	Env *Env
 }
 
-func (v TypeVar) ASTString(depth int) string {
+func (v ResolvedTypeArg) ASTString(depth int) string {
 	return fmt.Sprintf("TypeVar: %s", v.OriginalTypeVar.ASTString(depth))
 }
 
-func (v TypeVar) LeadingTrivia() []lexer.Token {
+func (v ResolvedTypeArg) LeadingTrivia() []lexer.Token {
 	return v.OriginalTypeVar.LeadingTrivia()
 }
 
-func (v TypeVar) Span() lexer.Span {
+func (v ResolvedTypeArg) Span() lexer.Span {
 	return v.OriginalTypeVar.Span()
 }
 
-type UnresolvedTypeVar struct {
+type UnresolvedTypeArg struct {
 	OriginalTypeVar parser.Node
 	// Reference to environment here.
 	Env *Env
 }
 
-func (v UnresolvedTypeVar) ASTString(depth int) string {
+func (v UnresolvedTypeArg) ASTString(depth int) string {
 	return fmt.Sprintf("UnresolvedTypeVar: %s", v.OriginalTypeVar.ASTString(depth))
 }
 
-func (v UnresolvedTypeVar) LeadingTrivia() []lexer.Token {
+func (v UnresolvedTypeArg) LeadingTrivia() []lexer.Token {
 	return v.OriginalTypeVar.LeadingTrivia()
 }
 
-func (v UnresolvedTypeVar) Span() lexer.Span {
+func (v UnresolvedTypeArg) Span() lexer.Span {
 	return v.OriginalTypeVar.Span()
 }

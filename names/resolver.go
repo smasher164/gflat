@@ -80,12 +80,16 @@ var Universe = &Env{
 // Replace ident with var that points to table?
 // That means we need a var node.
 // We'd like it to be a pointer to a Scope.
-func Resolve(n parser.Node) parser.Node {
-	return (&resolver{}).resolve(Universe, n)
+// func Resolve(n parser.Node) parser.Node {
+// 	return (&Resolver{}).Resolve(Universe, n)
+// }
+
+type Resolver struct {
+	imports map[string]struct{}
 }
 
-type resolver struct {
-	imports map[string]struct{}
+func NewResolver() *Resolver {
+	return &Resolver{imports: make(map[string]struct{})}
 }
 
 // should this be a method on Env?
@@ -174,7 +178,7 @@ func defineTag(env *Env, nd, ctx parser.Node) parser.Node {
 	return c
 }
 
-func (r *resolver) defineDestructure(env *Env, defineTypeArg bool, n, ctx parser.Node, f func(string)) parser.Node {
+func (r *Resolver) defineDestructure(env *Env, defineTypeArg bool, n, ctx parser.Node, f func(string)) parser.Node {
 	switch n := n.(type) {
 	case parser.Ident:
 		id := n.Name.Data
@@ -207,7 +211,7 @@ func (r *resolver) defineDestructure(env *Env, defineTypeArg bool, n, ctx parser
 		return v
 	case parser.CallExpr:
 		// assuming this is a pattern case
-		n.Elements[0] = r.resolve(env, n.Elements[0])
+		n.Elements[0] = r.Resolve(env, n.Elements[0])
 		if tag, ok := n.Elements[0].(parser.SelectorExpr); ok {
 			if _, ok := tag.Name.(Cons); ok {
 				n.Elements[1] = r.defineDestructure(env, defineTypeArg, n.Elements[1], ctx, f)
@@ -227,7 +231,7 @@ func (r *resolver) defineDestructure(env *Env, defineTypeArg bool, n, ctx parser
 		if _, ok := n.Name.(Cons); ok {
 			return n
 		}
-		return r.defineDestructure(env, defineTypeArg, r.resolve(env, n), ctx, f)
+		return r.defineDestructure(env, defineTypeArg, r.Resolve(env, n), ctx, f)
 		// assuming this is a pattern case
 		// n.X = resolve(env, n.X)
 		// switch x := n.X.(type) {
@@ -259,7 +263,7 @@ func (r *resolver) defineDestructure(env *Env, defineTypeArg bool, n, ctx parser
 	panic(fmt.Sprintf("unreachable %T", n))
 }
 
-func (r *resolver) resolveTypeAssignment(env *Env, defineTypeArg bool, elem parser.Tuple, lastCaller, ctx parser.Node) parser.Node {
+func (r *Resolver) resolveTypeAssignment(env *Env, defineTypeArg bool, elem parser.Tuple, lastCaller, ctx parser.Node) parser.Node {
 	for i := range elem.Elements {
 		comm := elem.Elements[i].(parser.CommaElement)
 		binExp := comm.X.(parser.BinaryExpr)
@@ -272,7 +276,7 @@ func (r *resolver) resolveTypeAssignment(env *Env, defineTypeArg bool, elem pars
 	return elem
 }
 
-func (r *resolver) defineResolveTypeAnnotation(env *Env, define bool, n, ctx parser.Node) parser.Node {
+func (r *Resolver) defineResolveTypeAnnotation(env *Env, define bool, n, ctx parser.Node) parser.Node {
 	switch n := n.(type) {
 	case parser.Tuple:
 		for i := range n.Elements {
@@ -296,22 +300,22 @@ func (r *resolver) defineResolveTypeAnnotation(env *Env, define bool, n, ctx par
 		n.Type = r.defineResolveTypeAnnotation(env, define, n.Type, ctx)
 		// what's interesting is that n.Default can reference the function name and existing parameters
 		// TODO: make sure to test this.
-		n.Default = r.resolve(env, n.Default)
+		n.Default = r.Resolve(env, n.Default)
 		return n
 	case parser.TypeArg:
 		if d, ok := env.LookupStack(n.TypeArg.Data); ok {
 			return d.Def
 		}
 		if define {
-			d := NewDefinition(TypeVar{OriginalTypeVar: n, Env: env}, ctx, NotForward)
+			d := NewDefinition(ResolvedTypeArg{OriginalTypeVar: n, Env: env}, ctx, NotForward)
 			env.AddSymbol(n.TypeArg.Data, d)
 			return d.Def
 		} else {
 			// return an UnresolvedTypeVar
-			return UnresolvedTypeVar{OriginalTypeVar: n, Env: env}
+			return UnresolvedTypeArg{OriginalTypeVar: n, Env: env}
 		}
 	case parser.Ident:
-		return r.resolve(env, n)
+		return r.Resolve(env, n)
 	case parser.FunctionType:
 		n.Param = r.defineResolveTypeAnnotation(env, define, n.Param, ctx)
 		for i := range n.Arrows {
@@ -333,7 +337,7 @@ func (r *resolver) defineResolveTypeAnnotation(env *Env, define bool, n, ctx par
 		n.Type = r.defineResolveTypeAnnotation(env, define, n.Type, ctx)
 		return n
 	case parser.SelectorExpr:
-		return r.resolve(env, n)
+		return r.Resolve(env, n)
 	case parser.CallExpr:
 		var lastCaller parser.Node
 		for i := range n.Elements {
@@ -343,10 +347,10 @@ func (r *resolver) defineResolveTypeAnnotation(env *Env, define bool, n, ctx par
 			// if it's not there, then it's an UnresolvedTypeVar.
 			switch elem := n.Elements[i].(type) {
 			case parser.Ident:
-				n.Elements[i] = r.resolve(env, elem)
+				n.Elements[i] = r.Resolve(env, elem)
 				lastCaller = n.Elements[i]
 			case parser.SelectorExpr:
-				n.Elements[i] = r.resolve(env, elem)
+				n.Elements[i] = r.Resolve(env, elem)
 				lastCaller = n.Elements[i]
 			case parser.Tuple:
 				if len(elem.Elements) >= 1 {
@@ -416,7 +420,7 @@ func resolveTopLevel(env *Env, n parser.Node) parser.Node {
 	panic("TODO")
 }
 
-func (r *resolver) resolve(env *Env, n parser.Node) parser.Node {
+func (r *Resolver) Resolve(env *Env, n parser.Node) parser.Node {
 	switch n := n.(type) {
 	case parser.BinaryExpr:
 		// add special case for 'a = type
@@ -424,12 +428,12 @@ func (r *resolver) resolve(env *Env, n parser.Node) parser.Node {
 			// n.Left = UnresolvedTypeVar{OriginalTypeVar: l, Env: env}
 			n.Left = parser.Illegal{Node: n.Left, Msg: "cannot assign type variable outside of an application"}
 		} else {
-			n.Left = r.resolve(env, n.Left)
+			n.Left = r.Resolve(env, n.Left)
 		}
-		n.Right = r.resolve(env, n.Right)
+		n.Right = r.Resolve(env, n.Right)
 		return n
 	case parser.Stmt:
-		n.Stmt = r.resolve(env, n.Stmt)
+		n.Stmt = r.Resolve(env, n.Stmt)
 		return n
 	case parser.Package:
 		n.Imports = make(map[string]struct{})
@@ -442,7 +446,7 @@ func (r *resolver) resolve(env *Env, n parser.Node) parser.Node {
 			}
 		}
 		for i := range n.ScriptFiles {
-			n.ScriptFiles[i] = r.resolve(env.AddScope(), n.ScriptFiles[i])
+			n.ScriptFiles[i] = r.Resolve(env.AddScope(), n.ScriptFiles[i])
 			if f, ok := n.ScriptFiles[i].(parser.File); ok {
 				maps.Copy(n.Imports, f.Imports)
 			}
@@ -451,7 +455,7 @@ func (r *resolver) resolve(env *Env, n parser.Node) parser.Node {
 		return n
 	case parser.File:
 		r.imports = make(map[string]struct{})
-		n.Body = r.resolve(env, n.Body)
+		n.Body = r.Resolve(env, n.Body)
 		n.Imports = r.imports
 		r.imports = nil
 		return n
@@ -471,14 +475,14 @@ func (r *resolver) resolve(env *Env, n parser.Node) parser.Node {
 		if ok {
 			return def.Def
 		}
-		return UnresolvedTypeVar{OriginalTypeVar: n, Env: env}
+		return UnresolvedTypeArg{OriginalTypeVar: n, Env: env}
 	case parser.Illegal:
-		n.Node = r.resolve(env, n.Node)
+		n.Node = r.Resolve(env, n.Node)
 		return n // At what point do we reject programs with illegal nodes?
 	case parser.Block:
 		env := env.AddScope()
 		for i := range n.Body {
-			n.Body[i] = r.resolve(env, n.Body[i])
+			n.Body[i] = r.Resolve(env, n.Body[i])
 		}
 		return resolveUnresolved(env, n)
 	case parser.EmptyExpr:
@@ -517,11 +521,23 @@ func (r *resolver) resolve(env *Env, n parser.Node) parser.Node {
 		}
 		n.Name = r.defineDestructure(env, false, n.Name, n, func(string) {})
 		bodyScope := env.AddScope()
-		n.Signature = r.resolve(bodyScope, n.Signature)
+		define := true
+		for i := range n.TypeParams {
+			n.TypeParams[i] = r.defineResolveTypeAnnotation(bodyScope, true, n.TypeParams[i], n)
+			define = false
+		}
+		sig := n.Signature.(parser.FunctionSignature)
+		sig.Param = r.defineResolveTypeAnnotation(env, define, sig.Param, sig)
+		for i := range sig.Arrows {
+			sig.Arrows[i] = r.defineResolveTypeAnnotation(env, define, sig.Arrows[i], sig)
+		}
+		sig.Clause = r.defineResolveTypeAnnotation(env, false, sig.Clause, sig)
+		n.Signature = sig
+		// n.Signature = r.Resolve(bodyScope, n.Signature)
 		// sig := n.Signature.(parser.FunctionSignature)
 		// sig.Param = r.defineDestructure(bodyScope, sig.Param, sig, func(id string) {})
 		// n.Signature = sig
-		n.Body = r.resolve(bodyScope, n.Body)
+		n.Body = r.Resolve(bodyScope, n.Body)
 		setIllegals(env, id, n.Body)
 		return n
 	case parser.Function:
@@ -535,14 +551,25 @@ func (r *resolver) resolve(env *Env, n parser.Node) parser.Node {
 			n.Name = r.defineDestructure(env, false, n.Name, n, func(string) {})
 		}
 		bodyScope := env.AddScope()
-		n.Signature = r.resolve(bodyScope, n.Signature)
-		n.Body = r.resolve(bodyScope, n.Body)
+		define := true
+		for i := range n.TypeParams {
+			n.TypeParams[i] = r.defineResolveTypeAnnotation(bodyScope, true, n.TypeParams[i], n)
+			define = false
+		}
+		sig := n.Signature.(parser.FunctionSignature)
+		sig.Param = r.defineResolveTypeAnnotation(env, define, sig.Param, sig)
+		for i := range sig.Arrows {
+			sig.Arrows[i] = r.defineResolveTypeAnnotation(env, define, sig.Arrows[i], sig)
+		}
+		sig.Clause = r.defineResolveTypeAnnotation(env, false, sig.Clause, sig)
+		n.Signature = sig
+		n.Body = r.Resolve(bodyScope, n.Body)
 		if n.Name != nil {
 			setIllegals(env, id, n.Body)
 		}
 		return n
 	case parser.CommaElement:
-		n.X = r.resolve(env, n.X)
+		n.X = r.Resolve(env, n.X)
 		return n
 	case parser.Tuple:
 		// Note: Tuple literals have an ambiguity in that they can be used for struct literals and map literals.
@@ -552,12 +579,12 @@ func (r *resolver) resolve(env *Env, n parser.Node) parser.Node {
 		// In reality, if it's a struct, there should be a new scope created for the struct fields that are introduced.
 		tupleScope := env.AddScope()
 		for i := range n.Elements {
-			n.Elements[i] = r.resolve(tupleScope, n.Elements[i])
+			n.Elements[i] = r.Resolve(tupleScope, n.Elements[i])
 		}
 		return n
 	case parser.LetDecl:
 		// resolve right, then introduce bindings. don't leave it up to the ident rule.
-		n.Rhs = r.resolve(env, n.Rhs) // Does this correspond to my strategy?
+		n.Rhs = r.Resolve(env, n.Rhs) // Does this correspond to my strategy?
 		n.Destructure = r.defineDestructure(env, false, n.Destructure, n, func(id string) {
 			// setIllegalsUsingWalk(env, id, n.Rhs)
 			setIllegals(env, id, n.Rhs)
@@ -565,24 +592,24 @@ func (r *resolver) resolve(env *Env, n parser.Node) parser.Node {
 		return n
 	case parser.VarDecl:
 		// resolve right, then introduce bindings. don't leave it up to the ident rule.
-		n.Rhs = r.resolve(env, n.Rhs) // Does this correspond to my strategy?
+		n.Rhs = r.Resolve(env, n.Rhs) // Does this correspond to my strategy?
 		n.Destructure = r.defineDestructure(env, false, n.Destructure, n, func(id string) {
 			setIllegals(env, id, n.Rhs)
 		})
 		return n
 	case parser.IfHeader:
-		n.Cond = r.resolve(env, n.Cond)
+		n.Cond = r.Resolve(env, n.Cond)
 		return n
 	case parser.If:
-		n.IfHeader = r.resolve(env, n.IfHeader)
-		n.Body = r.resolve(env, n.Body)
+		n.IfHeader = r.Resolve(env, n.IfHeader)
+		n.Body = r.Resolve(env, n.Body)
 	case parser.IfElse:
-		n.IfHeader = r.resolve(env, n.IfHeader)
-		n.Body = r.resolve(env, n.Body)
-		n.ElseBody = r.resolve(env, n.ElseBody)
+		n.IfHeader = r.Resolve(env, n.IfHeader)
+		n.Body = r.Resolve(env, n.Body)
+		n.ElseBody = r.Resolve(env, n.ElseBody)
 		return n
 	case parser.IfMatch:
-		n.IfHeader = r.resolve(env, n.IfHeader)
+		n.IfHeader = r.Resolve(env, n.IfHeader)
 		for i := range n.Cases {
 			/*
 				1. Add a scope for each case.
@@ -606,8 +633,8 @@ func (r *resolver) resolve(env *Env, n parser.Node) parser.Node {
 			patternCase.Pattern = r.defineDestructure(patternScope, false, pat, patternCase, func(id string) {
 				setIllegals(patternScope, id, n.IfHeader)
 			})
-			patternCase.Guard = r.resolve(patternScope, patternCase.Guard)
-			patternCase.Expr = r.resolve(patternScope, patternCase.Expr)
+			patternCase.Guard = r.Resolve(patternScope, patternCase.Guard)
+			patternCase.Expr = r.Resolve(patternScope, patternCase.Expr)
 			n.Cases[i] = patternCase
 		}
 		return n
@@ -627,7 +654,7 @@ func (r *resolver) resolve(env *Env, n parser.Node) parser.Node {
 				n.TypeParams[i] = parser.Illegal{Node: localDef.Def, Msg: fmt.Sprintf("%s was already defined", id)}
 			} else {
 				// params are *always* defined for type decls
-				d := NewDefinition(TypeVar{OriginalTypeVar: typeParam, Env: bodyScope}, n, NotForward)
+				d := NewDefinition(ResolvedTypeArg{OriginalTypeVar: typeParam, Env: bodyScope}, n, NotForward)
 				bodyScope.AddSymbol(id, d)
 				n.TypeParams[i] = d.Def
 			}
@@ -681,17 +708,17 @@ func (r *resolver) resolve(env *Env, n parser.Node) parser.Node {
 	// 	n.Type = r.resolve(env, n.Type)
 	// 	return n
 	case parser.PrefixExpr:
-		n.X = r.resolve(env, n.X)
+		n.X = r.Resolve(env, n.X)
 		return n
 	case parser.CallExpr:
 		var lastCaller parser.Node
 		for i := range n.Elements {
 			switch elem := n.Elements[i].(type) {
 			case parser.Ident:
-				n.Elements[i] = r.resolve(env, elem)
+				n.Elements[i] = r.Resolve(env, elem)
 				lastCaller = n.Elements[i]
 			case parser.SelectorExpr:
-				n.Elements[i] = r.resolve(env, elem)
+				n.Elements[i] = r.Resolve(env, elem)
 				lastCaller = n.Elements[i]
 			case parser.Tuple:
 				if len(elem.Elements) >= 1 {
@@ -704,9 +731,9 @@ func (r *resolver) resolve(env *Env, n parser.Node) parser.Node {
 						}
 					}
 				}
-				n.Elements[i] = r.resolve(env, elem)
+				n.Elements[i] = r.Resolve(env, elem)
 			default:
-				n.Elements[i] = r.resolve(env, elem)
+				n.Elements[i] = r.Resolve(env, elem)
 			}
 			// check if caller references an ident whose len(def.Undefined) != 0
 			// if so, error.
@@ -717,22 +744,22 @@ func (r *resolver) resolve(env *Env, n parser.Node) parser.Node {
 		}
 		return n
 	case parser.PostfixExpr:
-		n.X = r.resolve(env, n.X)
+		n.X = r.Resolve(env, n.X)
 		return n
 	case parser.SelectorExpr:
-		n.X = r.resolve(env, n.X)
+		n.X = r.Resolve(env, n.X)
 		n.Name = Select(n.X, n.Name)
 		return n
 	case parser.StringPart:
 	case parser.String:
 	case parser.IndexExpr:
-		n.X = r.resolve(env, n.X)
+		n.X = r.Resolve(env, n.X)
 		for i := range n.IndexElements {
-			n.IndexElements[i] = r.resolve(env, n.IndexElements[i])
+			n.IndexElements[i] = r.Resolve(env, n.IndexElements[i])
 		}
 		return n
 	case parser.ImportDecl:
-		n.Package = r.resolve(env, n.Package)
+		n.Package = r.Resolve(env, n.Package)
 	case parser.ImportDeclPackage:
 		var importPath string
 		if path, ok := n.Path.(parser.String); ok {
@@ -779,15 +806,15 @@ func (r *resolver) resolve(env *Env, n parser.Node) parser.Node {
 			}
 		}
 	case parser.ImplDecl:
-		n.Name = r.resolve(env, n.Name)
+		n.Name = r.Resolve(env, n.Name)
 		implScope := env.AddScope()
 		n.Args = r.defineResolveTypeAnnotation(implScope, true, n.Args, n)
 		n.Clause = r.defineResolveTypeAnnotation(implScope, false, n.Clause, n)
-		n.Body = r.resolve(implScope, n.Body)
+		n.Body = r.Resolve(implScope, n.Body)
 		return n
 	case parser.ArrayType:
 	case parser.NillableType:
-		n.Type = r.resolve(env, n.Type)
+		n.Type = r.Resolve(env, n.Type)
 		return n
 	case Var: // is it possible to hit this case?
 	case TypeName:

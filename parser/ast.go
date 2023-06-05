@@ -396,11 +396,12 @@ func (n Arrow) ASTString(depth int) string {
 }
 
 type LetFunction struct {
-	Let       lexer.Token
-	Name      Node
-	Signature Node
-	Equals    lexer.Token
-	Body      Node
+	Let        lexer.Token
+	TypeParams []Node
+	Name       Node
+	Signature  Node
+	Equals     lexer.Token
+	Body       Node
 }
 
 func (f LetFunction) LeadingTrivia() []lexer.Token {
@@ -412,43 +413,29 @@ func (f LetFunction) Span() lexer.Span {
 }
 
 func (f LetFunction) ASTString(depth int) string {
-	// f.Name can be nil
-	// f.Equals and f.Body can be missing
-	// so we need to check for those cases
-	// f.Name missing, f.Equals, and f.Body missing
-	// f.Name missing, but Signature, Equals, and Body present
-	// f.Name present, but Equals and Body missing
-	// f.Name present, Signature present, but Equals and Body missing
-	// everything present
-
-	if f.Name == nil {
-		if f.Equals.Type != lexer.Equals {
-			return fmt.Sprintf(
-				"LetFunction\n%sLet: %s\n%sSignature: %s",
-				indent(depth+1), f.Let, indent(depth+1), f.Signature.ASTString(depth+1))
-		}
-		return fmt.Sprintf(
-			"LetFunction\n%sLet: %s\n%sSignature: %s\n%sEquals: %s\n%sBody: %s",
-			indent(depth+1), f.Let, indent(depth+1), f.Signature.ASTString(depth+1),
-			indent(depth+1), f.Equals, indent(depth+1), f.Body.ASTString(depth+1))
+	// optional fields: TypeParams, Name, Body
+	buf := new(strings.Builder)
+	buf.WriteString(fmt.Sprintf("LetFunction\n%sLet: %s\n", indent(depth+1), f.Let))
+	if len(f.TypeParams) > 0 {
+		buf.WriteString(fmt.Sprintf("%sTypeParams: %s\n", indent(depth+1), printNodeSlice(depth+1, f.TypeParams)))
 	}
-	if f.Equals.Type != lexer.Equals {
-		return fmt.Sprintf(
-			"LetFunction\n%sLet: %s\n%sName: %s\n%sSignature: %s",
-			indent(depth+1), f.Let, indent(depth+1), f.Name.ASTString(depth+1), indent(depth+1), f.Signature.ASTString(depth+1))
+	if f.Name != nil {
+		buf.WriteString(fmt.Sprintf("%sName: %s\n", indent(depth+1), f.Name.ASTString(depth+1)))
 	}
-	return fmt.Sprintf(
-		"LetFunction\n%sLet: %s\n%sName: %s\n%sSignature: %s\n%sEquals: %s\n%sBody: %s",
-		indent(depth+1), f.Let, indent(depth+1), f.Name.ASTString(depth+1), indent(depth+1), f.Signature.ASTString(depth+1), indent(depth+1), f.Equals, indent(depth+1), f.Body.ASTString(depth+1))
-
+	buf.WriteString(fmt.Sprintf("%sSignature: %s\n", indent(depth+1), f.Signature.ASTString(depth+1)))
+	if f.Body != nil {
+		buf.WriteString(fmt.Sprintf("%sEquals: %s\n%sBody: %s", indent(depth+1), f.Equals, indent(depth+1), f.Body.ASTString(depth+1)))
+	}
+	return buf.String()
 }
 
 type Function struct {
-	Fun       lexer.Token
-	Name      Node
-	Signature Node
-	FatArrow  lexer.Token
-	Body      Node
+	Fun        lexer.Token
+	TypeParams []Node
+	Name       Node
+	Signature  Node
+	FatArrow   lexer.Token
+	Body       Node
 }
 
 func (f Function) LeadingTrivia() []lexer.Token {
@@ -460,25 +447,20 @@ func (f Function) Span() lexer.Span {
 }
 
 func (f Function) ASTString(depth int) string {
-	if f.Name == nil {
-		if f.FatArrow.Type != lexer.FatArrow {
-			return fmt.Sprintf(
-				"Function\n%sFun: %s\n%sSignature: %s",
-				indent(depth+1), f.Fun, indent(depth+1), f.Signature.ASTString(depth+1))
-		}
-		return fmt.Sprintf(
-			"Function\n%sFun: %s\n%sSignature: %s\n%sFatArrow: %s\n%sBody: %s",
-			indent(depth+1), f.Fun, indent(depth+1), f.Signature.ASTString(depth+1),
-			indent(depth+1), f.FatArrow, indent(depth+1), f.Body.ASTString(depth+1))
+	// optional fields: TypeParams, Name, Body
+	buf := new(strings.Builder)
+	buf.WriteString(fmt.Sprintf("Function\n%sFun: %s\n", indent(depth+1), f.Fun))
+	if len(f.TypeParams) > 0 {
+		buf.WriteString(fmt.Sprintf("%sTypeParams: %s\n", indent(depth+1), printNodeSlice(depth+1, f.TypeParams)))
 	}
-	if f.FatArrow.Type != lexer.FatArrow {
-		return fmt.Sprintf(
-			"Function\n%sFun: %s\n%sName: %s\n%sSignature: %s",
-			indent(depth+1), f.Fun, indent(depth+1), f.Name.ASTString(depth+1), indent(depth+1), f.Signature.ASTString(depth+1))
+	if f.Name != nil {
+		buf.WriteString(fmt.Sprintf("%sName: %s\n", indent(depth+1), f.Name.ASTString(depth+1)))
 	}
-	return fmt.Sprintf(
-		"Function\n%sFun: %s\n%sName: %s\n%sSignature: %s\n%sFatArrow: %s\n%sBody: %s",
-		indent(depth+1), f.Fun, indent(depth+1), f.Name.ASTString(depth+1), indent(depth+1), f.Signature.ASTString(depth+1), indent(depth+1), f.FatArrow, indent(depth+1), f.Body.ASTString(depth+1))
+	buf.WriteString(fmt.Sprintf("%sSignature: %s\n", indent(depth+1), f.Signature.ASTString(depth+1)))
+	if f.Body != nil {
+		buf.WriteString(fmt.Sprintf("%sFatArrow: %s\n%sBody: %s", indent(depth+1), f.FatArrow, indent(depth+1), f.Body.ASTString(depth+1)))
+	}
+	return buf.String()
 }
 
 type CommaElement struct {

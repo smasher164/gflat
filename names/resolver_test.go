@@ -31,6 +31,7 @@ func Test(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	f = names.Resolve(f)
+	r := names.NewResolver()
+	f = r.Resolve(names.Universe, f)
 	parser.PrintAST(f)
 }
