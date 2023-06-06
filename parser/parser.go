@@ -5,6 +5,7 @@ import (
 	"io/fs"
 
 	"github.com/smasher164/gflat/lexer"
+	"golang.org/x/exp/maps"
 )
 
 const debug = true
@@ -18,6 +19,7 @@ type parser struct {
 	tok                lexer.Token
 	buf                []lexer.Token // rework this when you need to start backtracking.
 	indent             int
+	imports            map[string]struct{}
 }
 
 type Lexer interface {
@@ -54,11 +56,12 @@ func ParseFile(fsys fs.FS, filename string) (Node, error) {
 	if err != nil {
 		return nil, err
 	}
-	return (&parser{l: l}).parseFile(), nil
+	return (&parser{l: l, imports: make(map[string]struct{})}).parseFile(), nil
 }
 
 func ParsePackage(fsys fs.FS, filenames ...string) (Node, error) {
 	var pkg Package
+	pkg.Imports = make(map[string]struct{})
 	var first error
 	for _, filename := range filenames {
 		file, err := ParseFile(fsys, filename)
@@ -82,6 +85,7 @@ func ParsePackage(fsys fs.FS, filenames ...string) (Node, error) {
 				} else {
 					pkg.ScriptFiles = append(pkg.ScriptFiles, file)
 				}
+				maps.Copy(pkg.Imports, file.Imports)
 			}
 		}
 	}
@@ -136,6 +140,7 @@ func (p *parser) parseFile() (f File) {
 	if p.tok.Type == lexer.EOF {
 		f.trailingTrivia = p.tok.LeadingTrivia
 	}
+	f.Imports = p.imports
 	return f
 }
 
@@ -343,8 +348,8 @@ func (p *parser) parseOperand() Node {
 	case lexer.Ident:
 		p.next()
 		return Ident{Name: tok}
-	case lexer.TypeArg:
-		return p.parseNamedTypeArgument() // forall should never be used in an expression
+	// case lexer.TypeArg:
+	// 	return p.parseNamedTypeArgument() // forall should never be used in an expression
 	case lexer.Number:
 		p.next()
 		return Number{Lit: tok}
@@ -1296,10 +1301,11 @@ func (p *parser) parseFunctionType() Node {
 
 func (p *parser) parseImportDeclPackage() Node {
 	defer p.trace("parseImportDeclPackage")()
+	var importDecl ImportDeclPackage
 	switch p.tok.Type {
 	case lexer.String:
 		path := p.parseString()
-		return ImportDeclPackage{Path: path}
+		importDecl = ImportDeclPackage{Path: path}
 	case lexer.Ident:
 		alias := p.tok
 		p.next()
@@ -1312,7 +1318,7 @@ func (p *parser) parseImportDeclPackage() Node {
 			panic("missing string")
 		}
 		path := p.parseString()
-		return ImportDeclPackage{
+		importDecl = ImportDeclPackage{
 			Binding: Ident{Name: alias},
 			Equals:  equals,
 			Path:    path,
@@ -1330,13 +1336,20 @@ func (p *parser) parseImportDeclPackage() Node {
 			panic("missing string")
 		}
 		path := p.parseString()
-		return ImportDeclPackage{
+		importDecl = ImportDeclPackage{
 			Binding: tup,
 			Equals:  equals,
 			Path:    path,
 		}
+	default:
+		panic("invalid import declaration")
 	}
-	panic("invalid import declaration")
+	if path, ok := importDecl.Path.(String); ok {
+		if path, ok := path.Parts[0].(StringPart); ok {
+			p.imports[path.Lit.Data] = struct{}{}
+		}
+	}
+	return importDecl
 }
 
 func (p *parser) parseImportDeclBlock() Node {

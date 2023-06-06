@@ -6,7 +6,6 @@ import (
 
 	"github.com/smasher164/gflat/lexer"
 	"github.com/smasher164/gflat/parser"
-	"golang.org/x/exp/maps"
 	"golang.org/x/mod/module"
 )
 
@@ -85,11 +84,10 @@ var Universe = &Env{
 // }
 
 type Resolver struct {
-	imports map[string]struct{}
 }
 
 func NewResolver() *Resolver {
-	return &Resolver{imports: make(map[string]struct{})}
+	return &Resolver{}
 }
 
 // should this be a method on Env?
@@ -423,41 +421,25 @@ func resolveTopLevel(env *Env, n parser.Node) parser.Node {
 func (r *Resolver) Resolve(env *Env, n parser.Node) parser.Node {
 	switch n := n.(type) {
 	case parser.BinaryExpr:
-		// add special case for 'a = type
-		if _, ok := n.Left.(parser.TypeArg); ok && n.Op.Type == lexer.Equals {
-			// n.Left = UnresolvedTypeVar{OriginalTypeVar: l, Env: env}
-			n.Left = parser.Illegal{Node: n.Left, Msg: "cannot assign type variable outside of an application"}
-		} else {
-			n.Left = r.Resolve(env, n.Left)
-		}
+		n.Left = r.Resolve(env, n.Left)
 		n.Right = r.Resolve(env, n.Right)
 		return n
 	case parser.Stmt:
 		n.Stmt = r.Resolve(env, n.Stmt)
 		return n
 	case parser.Package:
-		n.Imports = make(map[string]struct{})
 		// introduce package scope
 		packageScope := env.AddScope()
 		for i := range n.PackageFiles {
 			n.PackageFiles[i] = resolveTopLevel(packageScope, n.PackageFiles[i])
-			if f, ok := n.PackageFiles[i].(parser.File); ok {
-				maps.Copy(n.Imports, f.Imports)
-			}
 		}
 		for i := range n.ScriptFiles {
 			n.ScriptFiles[i] = r.Resolve(env.AddScope(), n.ScriptFiles[i])
-			if f, ok := n.ScriptFiles[i].(parser.File); ok {
-				maps.Copy(n.Imports, f.Imports)
-			}
 		}
 		// TODO: resolve cross-file identifiers
 		return n
 	case parser.File:
-		r.imports = make(map[string]struct{})
 		n.Body = r.Resolve(env, n.Body)
-		n.Imports = r.imports
-		r.imports = nil
 		return n
 	case parser.Ident:
 		// what if ident is "_"?
@@ -711,30 +693,8 @@ func (r *Resolver) Resolve(env *Env, n parser.Node) parser.Node {
 		n.X = r.Resolve(env, n.X)
 		return n
 	case parser.CallExpr:
-		var lastCaller parser.Node
 		for i := range n.Elements {
-			switch elem := n.Elements[i].(type) {
-			case parser.Ident:
-				n.Elements[i] = r.Resolve(env, elem)
-				lastCaller = n.Elements[i]
-			case parser.SelectorExpr:
-				n.Elements[i] = r.Resolve(env, elem)
-				lastCaller = n.Elements[i]
-			case parser.Tuple:
-				if len(elem.Elements) >= 1 {
-					if comm, ok := elem.Elements[0].(parser.CommaElement); ok {
-						if binExp, ok := comm.X.(parser.BinaryExpr); ok {
-							if _, ok := binExp.Left.(parser.TypeArg); ok && binExp.Op.Type == lexer.Equals {
-								n.Elements[i] = r.resolveTypeAssignment(env, false, elem, lastCaller, n)
-								break
-							}
-						}
-					}
-				}
-				n.Elements[i] = r.Resolve(env, elem)
-			default:
-				n.Elements[i] = r.Resolve(env, elem)
-			}
+			n.Elements[i] = r.Resolve(env, n.Elements[i])
 			// check if caller references an ident whose len(def.Undefined) != 0
 			// if so, error.
 			nd := n.Elements[i]
@@ -761,13 +721,6 @@ func (r *Resolver) Resolve(env *Env, n parser.Node) parser.Node {
 	case parser.ImportDecl:
 		n.Package = r.Resolve(env, n.Package)
 	case parser.ImportDeclPackage:
-		var importPath string
-		if path, ok := n.Path.(parser.String); ok {
-			if path, ok := path.Parts[0].(parser.StringPart); ok {
-				importPath = path.Lit.Data
-				r.imports[importPath] = struct{}{}
-			}
-		}
 		switch bind := n.Binding.(type) {
 		case parser.Ident:
 			id := bind.Name.Data
@@ -794,14 +747,19 @@ func (r *Resolver) Resolve(env *Env, n parser.Node) parser.Node {
 			}
 			n.Binding = bind
 		default:
-			if prefix, _, ok := module.SplitPathVersion(importPath); ok {
-				id := path.Base(prefix)
-				if localDef, ok := env.LookupLocal(id); ok {
-					n.Binding = parser.Illegal{Node: localDef.Def, Msg: fmt.Sprintf("%s was already defined", id)}
-				} else {
-					u := PackageName{OriginalIdent: bind, Env: env}
-					env.AddSymbol(id, NewDefinition(u, n, NotForward))
-					n.Binding = u
+			if spath, ok := n.Path.(parser.String); ok {
+				if spath, ok := spath.Parts[0].(parser.StringPart); ok {
+					importPath := spath.Lit.Data
+					if prefix, _, ok := module.SplitPathVersion(importPath); ok {
+						id := path.Base(prefix)
+						if localDef, ok := env.LookupLocal(id); ok {
+							n.Binding = parser.Illegal{Node: localDef.Def, Msg: fmt.Sprintf("%s was already defined", id)}
+						} else {
+							u := PackageName{OriginalIdent: bind, Env: env}
+							env.AddSymbol(id, NewDefinition(u, n, NotForward))
+							n.Binding = u
+						}
+					}
 				}
 			}
 		}
