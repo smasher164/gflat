@@ -3,6 +3,7 @@ package parser
 import (
 	"fmt"
 	"io/fs"
+	"strconv"
 
 	"github.com/smasher164/gflat/lexer"
 	"golang.org/x/exp/maps"
@@ -59,7 +60,7 @@ func ParseFile(fsys fs.FS, filename string) (Node, error) {
 	return (&parser{l: l, imports: make(map[string]struct{})}).parseFile(), nil
 }
 
-func ParsePackage(fsys fs.FS, filenames ...string) (Node, error) {
+func ParsePackage(fsys fs.FS, scriptFile string, filenames ...string) (Node, error) {
 	var pkg Package
 	pkg.Imports = make(map[string]struct{})
 	var first error
@@ -83,7 +84,9 @@ func ParsePackage(fsys fs.FS, filenames ...string) (Node, error) {
 						}
 					}
 				} else {
-					pkg.ScriptFiles = append(pkg.ScriptFiles, file)
+					if filename == scriptFile {
+						pkg.ScriptFiles = append(pkg.ScriptFiles, file)
+					}
 				}
 				maps.Copy(pkg.Imports, file.Imports)
 			}
@@ -92,7 +95,6 @@ func ParsePackage(fsys fs.FS, filenames ...string) (Node, error) {
 	if len(pkg.PackageFiles) > 0 && pkg.Name == "" {
 		return nil, fmt.Errorf("package name not found")
 	}
-	pkg.Imports = make(map[string]struct{})
 	return pkg, first
 }
 
@@ -1346,7 +1348,13 @@ func (p *parser) parseImportDeclPackage() Node {
 	}
 	if path, ok := importDecl.Path.(String); ok {
 		if path, ok := path.Parts[0].(StringPart); ok {
-			p.imports[path.Lit.Data] = struct{}{}
+			// unquote import path
+			// TODO: make this more robust
+			importPath, err := strconv.Unquote(path.Lit.Data)
+			if err != nil {
+				panic(fmt.Errorf("invalid import path: %v", err))
+			}
+			p.imports[importPath] = struct{}{}
 		}
 	}
 	return importDecl
