@@ -4,7 +4,7 @@
     nixpkgs.url = "github:nixos/nixpkgs";
     flake-utils.url = "github:numtide/flake-utils";
   };
-
+  
   outputs = { self, nixpkgs, flake-utils }:
     let supportedSystems = [
       "aarch64-linux"

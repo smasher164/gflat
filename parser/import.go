@@ -10,49 +10,42 @@ import (
 
 type Importer struct {
 	root     fs.FS
-	pkgCache map[string]Node
-	sorted   []string
+	PkgCache map[string]Node
+	Sorted   []string
 }
 
 func NewImporter(root fs.FS) *Importer {
 	return &Importer{
 		root:     root,
-		pkgCache: make(map[string]Node),
+		PkgCache: make(map[string]Node),
 	}
 }
 
 func (i *Importer) importCrawl(path, scriptFile string) (err error) {
-	pkg, err := i.importSingle(path, scriptFile)
+	pkg, err := i.ImportSingle(path, scriptFile)
 	if err != nil {
 		return err
 	}
 	{
 		pkg := pkg.(Package)
 		for path := range pkg.Imports {
-			if _, ok := i.pkgCache[path]; !ok {
+			if _, ok := i.PkgCache[path]; !ok {
 				if err = i.importCrawl(path, ""); err != nil {
 					return err
 				}
 			}
 		}
 	}
-	i.sorted = append(i.sorted, path)
+	i.Sorted = append(i.Sorted, path)
 	return nil
 }
 
-func (i *Importer) ImportCrawl(path, scriptFile string) error {
-	// ImportCrawl imports a package and all its dependencies.
-	// It returns the root package.
-	// If a dependency is already imported, it will be skipped.
-	// If there is a dependency cycle, an error will be returned.
-	if err := i.importCrawl(path, scriptFile); err != nil {
-		return err
-	}
+func (i *Importer) checkCycle() error {
 	pos := make(map[string]int)
-	for idx, path := range i.sorted {
+	for idx, path := range i.Sorted {
 		pos[path] = idx
 	}
-	for path, pkg := range i.pkgCache {
+	for path, pkg := range i.PkgCache {
 		for dep := range pkg.(Package).Imports {
 			if pos[path] <= pos[dep] {
 				// TODO: print the full path in the cycle
@@ -63,8 +56,19 @@ func (i *Importer) ImportCrawl(path, scriptFile string) error {
 	return nil
 }
 
-func (i *Importer) importSingle(path, scriptFile string) (pkg Node, err error) {
-	if pkg, ok := i.pkgCache[path]; ok {
+// ImportCrawl imports a package and all its dependencies.
+// It returns the root package.
+// If a dependency is already imported, it will be skipped.
+// If there is a dependency cycle, an error will be returned.
+func (i *Importer) ImportCrawl(path, scriptFile string) error {
+	if err := i.importCrawl(path, scriptFile); err != nil {
+		return err
+	}
+	return i.checkCycle()
+}
+
+func (i *Importer) ImportSingle(path, scriptFile string) (pkg Node, err error) {
+	if pkg, ok := i.PkgCache[path]; ok {
 		return pkg, nil
 	}
 	pkgfs, err := fs.Sub(i.root, path)
@@ -93,10 +97,6 @@ func (i *Importer) importSingle(path, scriptFile string) (pkg Node, err error) {
 	if err != nil {
 		return pkg, err
 	}
-	i.pkgCache[path] = pkg
+	i.PkgCache[path] = pkg
 	return pkg, nil
-}
-
-func (i *Importer) ImportSingle(path, scriptFile string) (pkg Node, err error) {
-	return i.importSingle(path, scriptFile)
 }

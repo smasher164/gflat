@@ -1,4 +1,4 @@
-package names
+package types
 
 import (
 	"fmt"
@@ -84,10 +84,18 @@ var Universe = &Env{
 // }
 
 type Resolver struct {
+	importer *parser.Importer
 }
 
-func NewResolver() *Resolver {
-	return &Resolver{}
+func NewResolver(importer *parser.Importer) *Resolver {
+	return &Resolver{importer: importer}
+}
+
+func (r *Resolver) ResolveBuild() {
+	for _, path := range r.importer.Sorted {
+		pkg := r.importer.PkgCache[path]
+		r.importer.PkgCache[path] = r.Resolve(Universe, pkg)
+	}
 }
 
 // should this be a method on Env?

@@ -1,4 +1,4 @@
-package names
+package types
 
 import "github.com/smasher164/gflat/parser"
 

@@ -1,4 +1,4 @@
-package names
+package types
 
 type Type interface {
 	// what should it be?
