@@ -164,3 +164,24 @@ func IsTypeVar(t Type) bool {
 	_, ok := t.(TypeVar)
 	return ok
 }
+
+func SimpleEquals(t1, t2 Type) bool {
+	// if they're both Base or Named
+	if t1, ok := t1.(Base); ok {
+		if t2, ok := t2.(Base); ok {
+			return t1 == t2
+		}
+	}
+	if t1, ok := t1.(Named); ok {
+		if t2, ok := t2.(Named); ok {
+			a, ok1 := t1.Env.LookupStack(t1.Name)
+			b, ok2 := t2.Env.LookupStack(t2.Name)
+			if !ok1 || !ok2 {
+				panic("unreachable")
+			}
+			return a.Def == b.Def
+			// return t1.Name == t2.Name
+		}
+	}
+	return false
+}

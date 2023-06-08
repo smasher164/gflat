@@ -70,17 +70,61 @@ func (r *Resolver) Check(env *Env, node parser.Node, t Type) parser.Node {
 	return tnode
 }
 
-func (r *Resolver) force(t Type) Type {
-	panic("TODO force")
+func (r *Resolver) get(t Type) Type {
+	if tvar, ok := t.(TypeVar); ok {
+		if tvar.Ref.Bound {
+			return r.get(tvar.Ref.Type)
+		}
+	}
+	return t
+}
+
+func (r *Resolver) occurs(tvar TypeVar, t Type) bool {
+	switch t := t.(type) {
+	case TypeVar:
+		// return tvar.Ref.ID == t.Ref.ID // TODO: is this correct with scoped type variables?
+		return tvar.Ref == t.Ref // TODO: is this correct with scoped type variables?
+	case Function:
+		for _, elem := range t.Elements {
+			if r.occurs(tvar, elem) {
+				return true
+			}
+		}
+		return false
+	case Base:
+		return false
+	}
+	panic(fmt.Sprintf("unimplemented: %T", t))
 }
 
 // Unify attempts to unify two types, and returns true if they are unifiable.
 func (r *Resolver) Unify(t1, t2 Type) bool {
-	// t1, t2 := r.force(t1), r.force(t2)
-	switch {
-	case t1.Equal(t2):
+	t1, t2 = r.get(t1), r.get(t2)
+	if SimpleEquals(t1, t2) {
 		return true
-		// case IsTypeVar(t1)
+	}
+	if tvar1, ok := t1.(TypeVar); ok && !tvar1.Ref.Bound && !r.occurs(tvar1, t2) {
+		tvar1.Ref.Bound = true
+		tvar1.Ref.Type = t2
+		return true
+	}
+	if tvar2, ok := t2.(TypeVar); ok && !tvar2.Ref.Bound && !r.occurs(tvar2, t1) {
+		tvar2.Ref.Bound = true
+		tvar2.Ref.Type = t1
+		return true
+	}
+	if tarr1, ok := t1.(Function); ok {
+		if tarr2, ok := t2.(Function); ok {
+			if len(tarr1.Elements) != len(tarr2.Elements) {
+				return false
+			}
+			for i := range tarr1.Elements {
+				if !r.Unify(tarr1.Elements[i], tarr2.Elements[i]) {
+					return false
+				}
+			}
+			return true
+		}
 	}
 	return false
 }
