@@ -8,6 +8,25 @@ import (
 	"github.com/smasher164/gflat/types"
 )
 
+func TestInferExpression(t *testing.T) {
+	fsys := fstest.MapFS{
+		"a/test.gf": &fstest.MapFile{
+			Data: []byte(`
+				1+1
+			`),
+		},
+	}
+	importer := parser.NewImporter(fsys)
+	if err := importer.ImportCrawl("a", "test.gf"); err != nil {
+		t.Fatal(err)
+	}
+	r := types.NewResolver(importer)
+	r.ResolveBuild()
+	for _, pkg := range importer.PkgCache {
+		parser.PrintAST(pkg)
+	}
+}
+
 func Test(t *testing.T) {
 	fsys := fstest.MapFS{
 		"a/test.gf": &fstest.MapFile{

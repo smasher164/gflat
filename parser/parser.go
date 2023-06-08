@@ -92,6 +92,9 @@ func ParsePackage(fsys fs.FS, scriptFile string, filenames ...string) (Node, err
 			}
 		}
 	}
+	if len(pkg.PackageFiles) == 0 && len(pkg.ScriptFiles) == 0 {
+		return nil, fmt.Errorf("no .gf files specified")
+	}
 	if len(pkg.PackageFiles) > 0 && pkg.Name == "" {
 		return nil, fmt.Errorf("package name not found")
 	}

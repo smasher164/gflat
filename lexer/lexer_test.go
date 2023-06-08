@@ -158,13 +158,13 @@ func TestLexer(t *testing.T) {
 		single(nil, EOF, Pos{72, 1, 73}),
 	})
 
-	run("identifiers.gf", "_ __ a_b_c a12 अखिल", []Token{
+	run("identifiers.gf", "_ __ a_b_c a12 成本", []Token{
 		dataTok(nil, Ident, Pos{0, 1, 1}, "_"),
 		dataTokWS(Pos{1, 1, 2}, Ident, Pos{2, 1, 3}, "__"),
 		dataTokWS(Pos{4, 1, 5}, Ident, Pos{5, 1, 6}, "a_b_c"),
 		dataTokWS(Pos{10, 1, 11}, Ident, Pos{11, 1, 12}, "a12"),
-		dataTokWS(Pos{14, 1, 15}, Ident, Pos{15, 1, 16}, "अखिल"),
-		single(nil, EOF, Pos{19, 1, 20}),
+		dataTokWS(Pos{14, 1, 15}, Ident, Pos{15, 1, 16}, "成本"),
+		single(nil, EOF, Pos{17, 1, 18}),
 	})
 
 	run("numbers.gf", "0 1 1.2 0.3 1.2e3 1.2e+3 1.2e-3 0x1 0xFB 0x1.3p1 0b01001 0o777 0o755", []Token{

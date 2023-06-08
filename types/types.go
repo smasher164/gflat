@@ -83,6 +83,8 @@ type Tuple struct {
 	// Env    *Env
 }
 
+var Unit = Tuple{}
+
 // Equal implements Type
 func (Tuple) Equal(Type) bool {
 	panic("unimplemented")
@@ -127,11 +129,15 @@ func (Map) Equal(Type) bool {
 	panic("unimplemented")
 }
 
+//go:generate go run golang.org/x/tools/cmd/stringer -type=Base
 type Base int
 
 // Equal implements Type
-func (Base) Equal(Type) bool {
-	panic("unimplemented")
+func (t1 Base) Equal(t2 Type) bool {
+	if t2, ok := t2.(Base); ok {
+		return t1 == t2
+	}
+	return false
 }
 
 const (
@@ -153,3 +159,8 @@ const (
 	Byte = Uint8
 	Rune = Int32
 )
+
+func IsTypeVar(t Type) bool {
+	_, ok := t.(TypeVar)
+	return ok
+}

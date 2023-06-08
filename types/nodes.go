@@ -12,6 +12,7 @@ var (
 	_ parser.Node = TypeName{}
 	_ parser.Node = UnresolvedIdent{}
 	_ parser.Node = PackageName{}
+	_ parser.Node = ResolvedPackage{}
 	_ parser.Node = Cons{}
 	_ parser.Node = ResolvedTypeArg{}
 	_ parser.Node = UnresolvedTypeArg{}
@@ -89,6 +90,26 @@ func (v PackageName) LeadingTrivia() []lexer.Token {
 
 func (v PackageName) Span() lexer.Span {
 	return v.OriginalIdent.Span()
+}
+
+type ResolvedPackage struct {
+	OriginalPackage parser.Node
+
+	Path string
+	// Reference to environment here.
+	Env *Env
+}
+
+func (v ResolvedPackage) ASTString(depth int) string {
+	return fmt.Sprintf("ResolvedPackage: %s", v.OriginalPackage.ASTString(depth))
+}
+
+func (v ResolvedPackage) LeadingTrivia() []lexer.Token {
+	return v.OriginalPackage.LeadingTrivia()
+}
+
+func (v ResolvedPackage) Span() lexer.Span {
+	return v.OriginalPackage.Span()
 }
 
 // Cons is a constructor Node that points into a Scope object.

@@ -10,7 +10,6 @@ import (
 	"strconv"
 	"unicode"
 
-	"github.com/smasher164/xid"
 	"golang.org/x/exp/slices"
 )
 
@@ -50,14 +49,17 @@ func (l *Lexer) lexWS() Token {
 }
 
 func isLetter(ch rune) bool {
-	// return ch == '_' || unicode.IsLetter(ch)
-	return ch == '_' || xid.Start(ch)
+	return ch == '_' || unicode.IsLetter(ch)
+	// return ch == '_' || xid.Start(ch)
 }
 
 func (l *Lexer) lexIdentOrKeyword(justIdent bool) Token {
 	startPos := l.pos
 	l.next()
-	for xid.Continue(l.ch) {
+	// for xid.Continue(l.ch) {
+	// 	l.next()
+	// }
+	for l.ch == '_' || unicode.IsLetter(l.ch) || unicode.IsDigit(l.ch) {
 		l.next()
 	}
 	ident := l.bufString()

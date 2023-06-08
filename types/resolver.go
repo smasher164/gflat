@@ -73,7 +73,8 @@ func (e *Env) LookupStack(name string) (d Definition, ok bool) {
 
 // TODO: add builtins to this
 var Universe = &Env{
-	parent: nil,
+	parent:  nil,
+	symbols: make(map[string]Definition),
 }
 
 // Replace ident with var that points to table?
@@ -93,8 +94,9 @@ func NewResolver(importer *parser.Importer) *Resolver {
 
 func (r *Resolver) ResolveBuild() {
 	for _, path := range r.importer.Sorted {
-		pkg := r.importer.PkgCache[path]
-		r.importer.PkgCache[path] = r.Resolve(Universe, pkg)
+		path := path
+		pkg := r.importer.PkgCache[path].(parser.Package)
+		r.importer.PkgCache[path] = r.Resolve(Universe, ResolvedPackage{OriginalPackage: pkg, Path: path, Env: Universe})
 	}
 }
 
@@ -107,7 +109,6 @@ func Select(x parser.Node, sel parser.Node) parser.Node {
 	switch x := x.(type) {
 	case TypeName:
 		id := x.OriginalIdent.(parser.Ident).Name.Data
-		// this part will fail if sel is a type arg
 		var selID string
 		switch sel := sel.(type) {
 		case parser.Ident:
@@ -435,15 +436,28 @@ func (r *Resolver) Resolve(env *Env, n parser.Node) parser.Node {
 	case parser.Stmt:
 		n.Stmt = r.Resolve(env, n.Stmt)
 		return n
-	case parser.Package:
+	case ResolvedPackage:
 		// introduce package scope
 		packageScope := env.AddScope()
-		for i := range n.PackageFiles {
-			n.PackageFiles[i] = resolveTopLevel(packageScope, n.PackageFiles[i])
+		origPkg := n.OriginalPackage.(parser.Package)
+		for i := range origPkg.PackageFiles {
+			origPkg.PackageFiles[i] = resolveTopLevel(packageScope, origPkg.PackageFiles[i])
 		}
-		for i := range n.ScriptFiles {
-			n.ScriptFiles[i] = r.Resolve(env.AddScope(), n.ScriptFiles[i])
+		// Copy defs inside
+		for i := range origPkg.ScriptFiles {
+			// there should only be one script file in the whole build
+			scriptScope := packageScope.AddScope() // should this be env.AddScope()?
+			origPkg.ScriptFiles[i] = r.Infer(scriptScope, origPkg.ScriptFiles[i])
 		}
+		n.OriginalPackage = origPkg
+		sym := NewDefinition(n, nil, NotForward)
+		for k, v := range packageScope.symbols {
+			if sym.Child == nil {
+				sym.Child = env.AddScope()
+			}
+			sym.Child.symbols[k] = v
+		}
+		env.AddSymbol(n.Path, sym)
 		// TODO: resolve cross-file identifiers
 		return n
 	case parser.File:
@@ -654,12 +668,12 @@ func (r *Resolver) Resolve(env *Env, n parser.Node) parser.Node {
 		// copy bodyScope.symbols to def.children
 		// does this make sense for tuples?
 		// i think so, for field access. not necessarily for A.b but for a.b
-		for k, v := range bodyScope.symbols {
+		for symbolName, symbolDef := range bodyScope.symbols {
 			if sym, ok := env.symbols[id]; ok {
 				if sym.Child == nil {
 					sym.Child = env.AddScope()
 				}
-				sym.Child.symbols[k] = v
+				sym.Child.symbols[symbolName] = symbolDef
 				env.symbols[id] = sym
 			}
 		}

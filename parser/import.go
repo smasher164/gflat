@@ -90,6 +90,9 @@ func (i *Importer) ImportSingle(path, scriptFile string) (pkg Node, err error) {
 		}
 		return name, true
 	})
+	if len(filenames) == 0 {
+		return pkg, fmt.Errorf("no .gf files found in package %s", path)
+	}
 	if !scriptFileFound && scriptFile != "" {
 		return pkg, fmt.Errorf("script file %s not found in package %s", scriptFile, path)
 	}
