@@ -56,6 +56,9 @@ func (r *Resolver) Infer(env *Env, n parser.Node) parser.Node {
 		// }
 	case parser.Number:
 		return TypedNode{Node: n, Type: Int}
+	case parser.Stmt:
+		n.Stmt = r.Infer(env, n.Stmt)
+		return TypedNode{Node: n, Type: Unit}
 	}
 	panic(fmt.Sprintf("unimplemented: %T", n))
 }

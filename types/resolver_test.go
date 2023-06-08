@@ -12,7 +12,8 @@ func TestInferExpression(t *testing.T) {
 	fsys := fstest.MapFS{
 		"a/test.gf": &fstest.MapFile{
 			Data: []byte(`
-				1+1
+				let a = 1
+				a+a
 			`),
 		},
 	}
