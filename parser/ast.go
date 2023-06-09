@@ -484,6 +484,29 @@ func (t CommaElement) Span() lexer.Span {
 	return spanOf(t.X).Add(t.Comma.Span)
 }
 
+type Array struct {
+	LeftBracket  lexer.Token
+	Elements     []Node
+	RightBracket lexer.Token
+}
+
+func (a Array) LeadingTrivia() []lexer.Token {
+	return a.LeftBracket.LeadingTrivia
+}
+
+func (a Array) Span() lexer.Span {
+	return a.LeftBracket.Span.Add(a.RightBracket.Span)
+}
+
+func (a Array) ASTString(depth int) string {
+	return fmt.Sprintf(
+		"Array\n%sLeftBracket: %s\n%sElements: %s\n%sRightBracket: %s",
+		indent(depth+1),
+		a.LeftBracket, indent(depth+1),
+		printNodeSlice(depth+1, a.Elements), indent(depth+1),
+		a.RightBracket)
+}
+
 type Tuple struct {
 	LeftParen  lexer.Token
 	Elements   []Node

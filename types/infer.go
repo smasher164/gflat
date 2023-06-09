@@ -25,7 +25,7 @@ func (t TypedNode) ASTString(depth int) string {
 	return fmt.Sprintf("TypedNode\n%sNode: %s\n%sType: %s", indent(depth+1), t.Node.ASTString(depth+1), indent(depth+1), t.Type)
 }
 
-// Infer accepts an untyped AST and returns a typed AST.
+// Infer accepts an untyped AST and returns a typed AST, resolving names and inferring types.
 func (r *Resolver) Infer(env *Env, n parser.Node) parser.Node {
 	switch n := n.(type) {
 	case parser.File:
@@ -55,10 +55,56 @@ func (r *Resolver) Infer(env *Env, n parser.Node) parser.Node {
 		// case DotDot, Plus, Minus, Times, Divide, Remainder, LeftShift, RightShift, And, Or, Caret, LogicalAnd, LogicalOr, LogicalEquals, NotEquals, Equals, LessThan, LessThanEquals, GreaterThan, GreaterThanEquals, LeftArrow, Exponentiation, Colon:
 		// }
 	case parser.Number:
-		return TypedNode{Node: n, Type: Int}
+		// TODO: Number trait
+		// t := r.freshTypeVar(env)
+
+		// return TypedNode{Node: n, Type: Int}
 	case parser.Stmt:
 		n.Stmt = r.Infer(env, n.Stmt)
 		return TypedNode{Node: n, Type: Unit}
+	case parser.LetDecl:
+		// ignore tuples for now
+		// no let-gen or inferred function signatures for now
+		// get type annotation
+		rhsEnv := env.AddScope()
+		switch des := n.Destructure.(type) {
+		case parser.Ident:
+			id := des.Name.Data
+			n.Rhs = r.Infer(rhsEnv, n.Rhs)
+			if _, ok := env.LookupLocal(id); ok {
+				n.Destructure = parser.Illegal{Node: des, Msg: fmt.Sprintf("redefinition of %s", id)}
+			} else {
+				if trhs, ok := n.Rhs.(TypedNode); ok {
+					n.Destructure = TypedNode{Node: Var{OriginalIdent: des, Env: env}, Type: trhs.Type}
+				} else {
+					n.Destructure = parser.Illegal{Node: des, Msg: "rhs does not have a valid type"}
+				}
+				if id != "_" {
+					env.AddSymbol(id, NewDefinition(n.Destructure, des, NotForward))
+				}
+			}
+		}
+		return n
+	case parser.Ident:
+		def, ok := env.LookupStack(n.Name.Data)
+		if ok {
+			return def.Def
+		}
+		return UnresolvedIdent{OriginalIdent: n, Env: env}
+		// add binding to current scope
+
+		/*
+		   this is how our old resolver code used to look:
+		   		// resolve right, then introduce bindings. don't leave it up to the ident rule.
+		   		n.Rhs = r.Resolve(env, n.Rhs) // Does this correspond to my strategy?
+		   		n.Destructure = r.defineDestructure(env, false, n.Destructure, n, func(id string) {
+		   			// setIllegalsUsingWalk(env, id, n.Rhs)
+		   			setIllegals(env, id, n.Rhs)
+		   		})
+		   		return n
+		*/
+		// Create a new scope for the rhs.
+		// Define new type variables based on destructure.
 	}
 	panic(fmt.Sprintf("unimplemented: %T", n))
 }

@@ -327,10 +327,6 @@ func (p *parser) parseFun() Node {
 	return fun
 }
 
-// TODO: should we accommodate other kinds of types?
-// []'t
-// T?
-// () tuple type will be hard to parse
 func (p *parser) parseOperand() Node {
 	defer p.trace("parseOperand")()
 	switch tok := p.tok; tok.Type {
@@ -353,13 +349,13 @@ func (p *parser) parseOperand() Node {
 	case lexer.Ident:
 		p.next()
 		return Ident{Name: tok}
-	// case lexer.TypeArg:
-	// 	return p.parseNamedTypeArgument() // forall should never be used in an expression
 	case lexer.Number:
 		p.next()
 		return Number{Lit: tok}
 	case lexer.StringBeg, lexer.String:
 		return p.parseString()
+	case lexer.LeftBracket:
+		return p.parseArray()
 	}
 	res := Illegal{span: p.tok.Span, Msg: "expected operand"}
 	p.next()
@@ -414,30 +410,6 @@ func (p *parser) parsePrimaryExpr() Node {
 		id := p.tok
 		p.next()
 		return SelectorExpr{X: x, Period: op, Name: Ident{Name: id}}
-	case op.Type == lexer.LeftBracket:
-		shouldInsert := p.shouldInsertAfter
-		toksToCheck := p.afterToksToCheck
-		p.shouldInsertDelimAfter(false)
-		p.next()
-		var index IndexExpr
-		index.X = x
-		index.LeftBracket = p.tok
-		for p.tok.Type != lexer.RightBracket && p.tok.Type != lexer.EOF {
-			var elem CommaElement
-			elem.X = p.parseExpr()
-			if p.tok.Type == lexer.Comma {
-				elem.Comma = p.tok
-				p.next()
-			}
-			index.IndexElements = append(index.IndexElements, elem)
-		}
-		if p.tok.Type != lexer.RightBracket {
-			panic("expected ]")
-		}
-		index.RightBracket = p.tok
-		p.shouldInsertDelimAfter(shouldInsert, toksToCheck...)
-		p.next()
-		return index
 	}
 	return x
 }
@@ -808,6 +780,34 @@ func (p *parser) parseTuplePattern() Node {
 	p.shouldInsertDelimAfter(shouldInsert, toksToCheck...)
 	p.next()
 	return tuple
+}
+
+func (p *parser) parseArray() Node {
+	defer p.trace("parseArray")()
+	// Should we support a => b syntax for array elements?
+	// or maybe a: b syntax?
+	shouldInsert := p.shouldInsertAfter
+	toksToCheck := p.afterToksToCheck
+	p.shouldInsertDelimAfter(false)
+	var arr Array
+	arr.LeftBracket = p.tok
+	p.next()
+	for p.tok.Type != lexer.RightBracket && p.tok.Type != lexer.EOF {
+		var elem CommaElement
+		elem.X = p.parseExpr()
+		if p.tok.Type == lexer.Comma {
+			elem.Comma = p.tok
+			p.next()
+		}
+		arr.Elements = append(arr.Elements, elem)
+	}
+	if p.tok.Type != lexer.RightBracket {
+		panic("missing right bracket")
+	}
+	arr.RightBracket = p.tok
+	p.shouldInsertDelimAfter(shouldInsert, toksToCheck...)
+	p.next()
+	return arr
 }
 
 func (p *parser) parseTuple() Node {

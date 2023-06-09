@@ -2,6 +2,7 @@ package lexer
 
 import (
 	"fmt"
+	"strings"
 
 	"golang.org/x/exp/slices"
 )
@@ -345,6 +346,10 @@ func (t Token) BeginsArgumentExpr() bool {
 // 	}
 // 	return 6
 // }
+
+func (t Token) IsFloat() bool {
+	return t.Type == Number && strings.IndexByte(t.Data, '.') >= 0
+}
 
 func (t Token) IsArithmetic() bool {
 	switch t.Type {

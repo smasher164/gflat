@@ -162,10 +162,7 @@ func TestFile(t *testing.T) {
 			// | Maybe.None => 0
 			// `),
 			Data: []byte(`
-			{
-				x()
-				()
-			}
+			f[1] = 2
 			`),
 		},
 	}
