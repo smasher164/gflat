@@ -421,26 +421,30 @@ func (p *parser) parseIndexExpr(x Node) Node {
 func (p *parser) parsePrimaryExpr() Node {
 	defer p.trace("parsePrimaryExpr")()
 	x := p.parseOperand()
-	switch op := p.tok; {
-	case op.IsPostfixOp():
-		// if it's DotDot and the next token is the start of an expression, just return the x
-		if op.Type == lexer.DotDot && p.peek().BeginsPrefixExpr() {
-			return x
-		}
-		p.next()
-		return PostfixExpr{X: x, Op: op}
-	case op.Type == lexer.Period:
-		p.next()
-		if p.tok.Type != lexer.Ident {
-			panic("expected ident after .")
-		}
-		id := p.tok
-		p.next()
-		return SelectorExpr{X: x, Period: op, Name: Ident{Name: id}}
-	case op.Type == lexer.LeftBracket:
-		// greedily consume index expression. if leading trivia is present, it's an array literal
-		for p.tok.Type == lexer.LeftBracket && len(p.tok.LeadingTrivia) == 0 {
+L:
+	for {
+		switch op := p.tok; {
+		case op.IsPostfixOp():
+			// if it's DotDot and the next token is the start of an expression, just return the x
+			if op.Type == lexer.DotDot && p.peek().BeginsPrefixExpr() {
+				break L
+			} else {
+				p.next()
+				x = PostfixExpr{X: x, Op: op}
+			}
+		case op.Type == lexer.Period:
+			p.next()
+			if p.tok.Type != lexer.Ident {
+				panic("expected ident after .")
+			}
+			id := p.tok
+			p.next()
+			x = SelectorExpr{X: x, Period: op, Name: Ident{Name: id}}
+		case op.Type == lexer.LeftBracket && len(p.tok.LeadingTrivia) == 0:
+			// greedily consume index expression. if leading trivia is present, it's an array literal
 			x = p.parseIndexExpr(x)
+		default:
+			break L
 		}
 	}
 	return x
