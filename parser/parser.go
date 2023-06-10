@@ -391,6 +391,33 @@ func (p *parser) parseString() Node {
 	panic("expected string")
 }
 
+func (p *parser) parseIndexExpr(x Node) Node {
+	defer p.trace("parseIndexExpr")()
+	shouldInsert := p.shouldInsertAfter
+	toksToCheck := p.afterToksToCheck
+	p.shouldInsertDelimAfter(false)
+	var index IndexExpr
+	index.X = x
+	index.LeftBracket = p.tok
+	p.next()
+	for p.tok.Type != lexer.RightBracket && p.tok.Type != lexer.EOF {
+		var elem CommaElement
+		elem.X = p.parseExpr()
+		if p.tok.Type == lexer.Comma {
+			elem.Comma = p.tok
+			p.next()
+		}
+		index.IndexElements = append(index.IndexElements, elem)
+	}
+	if p.tok.Type != lexer.RightBracket {
+		panic("missing right bracket")
+	}
+	index.RightBracket = p.tok
+	p.shouldInsertDelimAfter(shouldInsert, toksToCheck...)
+	p.next()
+	return index
+}
+
 func (p *parser) parsePrimaryExpr() Node {
 	defer p.trace("parsePrimaryExpr")()
 	x := p.parseOperand()
@@ -410,6 +437,11 @@ func (p *parser) parsePrimaryExpr() Node {
 		id := p.tok
 		p.next()
 		return SelectorExpr{X: x, Period: op, Name: Ident{Name: id}}
+	case op.Type == lexer.LeftBracket:
+		// greedily consume index expression. if leading trivia is present, it's an array literal
+		for p.tok.Type == lexer.LeftBracket && len(p.tok.LeadingTrivia) == 0 {
+			x = p.parseIndexExpr(x)
+		}
 	}
 	return x
 }
