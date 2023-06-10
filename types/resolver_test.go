@@ -13,7 +13,8 @@ func TestInferExpression(t *testing.T) {
 		"a/test.gf": &fstest.MapFile{
 			Data: []byte(`
 				let a = 1
-				a+a
+				a = 1
+				a
 			`),
 		},
 	}
