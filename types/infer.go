@@ -3,6 +3,7 @@ package types
 import (
 	"fmt"
 
+	"github.com/smasher164/gflat/lexer"
 	"github.com/smasher164/gflat/parser"
 )
 
@@ -25,72 +26,142 @@ func (t TypedNode) ASTString(depth int) string {
 	return fmt.Sprintf("TypedNode\n%sNode: %s\n%sType: %s", indent(depth+1), t.Node.ASTString(depth+1), indent(depth+1), t.Type)
 }
 
-// Infer accepts an untyped AST and returns a typed AST, resolving names and inferring types.
-func (r *Resolver) Infer(env *Env, n parser.Node) parser.Node {
+// Infer accepts an untyped AST and returns a typed AST.
+func (r *Resolver) Infer(n parser.Node) parser.Node {
 	switch n := n.(type) {
-	case parser.File:
-		n.Body = r.Infer(env, n.Body)
-		if tbody, ok := n.Body.(TypedNode); ok {
-			return TypedNode{Node: n, Type: tbody.Type}
+	case ResolvedPackage:
+		pkg := n.OriginalPackage.(parser.Package)
+		// skip PackageFiles for now
+		for i := range pkg.ScriptFiles {
+			pkg.ScriptFiles[i] = r.Infer(pkg.ScriptFiles[i])
 		}
-		return parser.Illegal{Node: n, Msg: "file body does not have a valid type"}
+		n.OriginalPackage = pkg
+		return n
+	case parser.File:
+		n.Body = r.Infer(n.Body)
+		return n
 	case parser.Block:
-		bodyScope := env.AddScope()
 		var lastType Type = Unit
 		for i := range n.Body {
-			n.Body[i] = r.Infer(bodyScope, n.Body[i])
+			n.Body[i] = r.Infer(n.Body[i])
 			if tbody, ok := n.Body[i].(TypedNode); ok {
 				lastType = tbody.Type
 			}
 		}
-		// n = fixUnresolved(n)
 		return TypedNode{Node: n, Type: lastType}
 	case parser.BinaryExpr:
 		// just for demo purposes. this should be using traits.
-		n.Left = r.Check(env, n.Left, Int)
-		n.Right = r.Check(env, n.Right, Int)
-		return TypedNode{Node: n, Type: Int}
+		// based on the actual op
+		switch n.Op.Type {
+		case lexer.DotDot:
+		case lexer.Plus:
+			n.Left = r.Infer(n.Left)
+			if tleft, ok := n.Left.(TypedNode); ok {
+				n.Right = r.Check(n.Right, tleft.Type)
+				// check if right is typed as a number or string
+				if tright, ok := n.Right.(TypedNode); ok {
+					if tright.Type.Equal(Int) || tright.Type.Equal(String) {
+						return TypedNode{Node: n, Type: tright.Type}
+					}
+					panic("TODO: invalid types being added. when traits are added, this will be fixed.")
+				}
+			}
+			return n
+		case lexer.Minus:
+		case lexer.Times:
+		case lexer.Divide:
+		case lexer.Remainder:
+		case lexer.LeftShift:
+		case lexer.RightShift:
+		case lexer.And, lexer.Caret:
+			n.Left = r.Check(n.Left, Int)
+			n.Right = r.Check(n.Right, Int)
+			if IsTyped(n.Left) && IsTyped(n.Right) {
+				return TypedNode{Node: n, Type: n.Left.(TypedNode).Type}
+			}
+			return n
+		case lexer.Or:
+		case lexer.LogicalAnd, lexer.LogicalOr:
+			n.Left = r.Check(n.Left, Bool)
+			n.Right = r.Check(n.Right, Bool)
+			if IsTyped(n.Left) && IsTyped(n.Right) {
+				return TypedNode{Node: n, Type: n.Left.(TypedNode).Type}
+			}
+			return n
+		case lexer.Equals:
+		case lexer.LogicalEquals, lexer.NotEquals:
+			n.Left = r.Infer(n.Left)
+			if tleft, ok := n.Left.(TypedNode); ok {
+				n.Right = r.Check(n.Right, tleft.Type)
+				if IsTyped(n.Right) {
+					return TypedNode{Node: n, Type: Bool}
+				}
+			}
+			return n
+		case lexer.LessThan, lexer.LessThanEquals, lexer.GreaterThan, lexer.GreaterThanEquals:
+		case lexer.LeftArrow:
+		case lexer.Exponentiation:
+		case lexer.Colon:
+		}
+
 		// tRight := r.Infer(env, n.Right)
 		// switch n.Op {
 		// case DotDot, Plus, Minus, Times, Divide, Remainder, LeftShift, RightShift, And, Or, Caret, LogicalAnd, LogicalOr, LogicalEquals, NotEquals, Equals, LessThan, LessThanEquals, GreaterThan, GreaterThanEquals, LeftArrow, Exponentiation, Colon:
 		// }
 	case parser.Number:
 		// TODO: Number trait
-		// t := r.freshTypeVar(env)
-
-		// return TypedNode{Node: n, Type: Int}
+		return TypedNode{Node: n, Type: Int}
 	case parser.Stmt:
-		n.Stmt = r.Infer(env, n.Stmt)
+		n.Stmt = r.Infer(n.Stmt)
 		return TypedNode{Node: n, Type: Unit}
 	case parser.LetDecl:
+		n.Rhs = r.Infer(n.Rhs)
+		rtyp, ok := n.Rhs.(TypedNode)
+		if !ok {
+			return n
+		}
+		switch des := n.Destructure.(type) {
+		case Var:
+			id := des.OriginalIdent.(parser.Ident).Name.Data
+			n.Destructure = TypedNode{Node: des, Type: rtyp.Type}
+			des.Env.SetType(id, rtyp.Type)
+		}
+		return n
+	case Var:
+		id := n.OriginalIdent.(parser.Ident).Name.Data
+		def, _ := n.Env.LookupLocal(id)
+		if def.Type == nil {
+			return n
+		}
+		return TypedNode{Node: n, Type: def.Type}
 		// ignore tuples for now
 		// no let-gen or inferred function signatures for now
 		// get type annotation
-		rhsEnv := env.AddScope()
-		switch des := n.Destructure.(type) {
-		case parser.Ident:
-			id := des.Name.Data
-			n.Rhs = r.Infer(rhsEnv, n.Rhs)
-			if _, ok := env.LookupLocal(id); ok {
-				n.Destructure = parser.Illegal{Node: des, Msg: fmt.Sprintf("redefinition of %s", id)}
-			} else {
-				if trhs, ok := n.Rhs.(TypedNode); ok {
-					n.Destructure = TypedNode{Node: Var{OriginalIdent: des, Env: env}, Type: trhs.Type}
-				} else {
-					n.Destructure = parser.Illegal{Node: des, Msg: "rhs does not have a valid type"}
-				}
-				if id != "_" {
-					env.AddSymbol(id, NewDefinition(n.Destructure, des, NotForward))
-				}
-			}
-		}
-		return n
-	case parser.Ident:
-		def, ok := env.LookupStack(n.Name.Data)
-		if ok {
-			return def.Def
-		}
-		return UnresolvedIdent{OriginalIdent: n, Env: env}
+		// rhsEnv := env.AddScope()
+		// switch des := n.Destructure.(type) {
+		// case parser.Ident:
+		// 	id := des.Name.Data
+		// 	n.Rhs = r.Infer(rhsEnv, n.Rhs)
+		// 	if _, ok := env.LookupLocal(id); ok {
+		// 		n.Destructure = parser.Illegal{Node: des, Msg: fmt.Sprintf("redefinition of %s", id)}
+		// 	} else {
+		// 		if trhs, ok := n.Rhs.(TypedNode); ok {
+		// 			n.Destructure = TypedNode{Node: Var{OriginalIdent: des, Env: env}, Type: trhs.Type}
+		// 		} else {
+		// 			n.Destructure = parser.Illegal{Node: des, Msg: "rhs does not have a valid type"}
+		// 		}
+		// 		if id != "_" {
+		// 			env.AddSymbol(id, NewDefinition(n.Destructure, des, NotForward))
+		// 		}
+		// 	}
+		// }
+		// return n
+		// case parser.Ident:
+		// 	def, ok := env.LookupStack(n.Name.Data)
+		// 	if ok {
+		// 		return def.Def
+		// 	}
+		// 	return UnresolvedIdent{OriginalIdent: n, Env: env}
 		// add binding to current scope
 
 		/*
@@ -109,8 +180,8 @@ func (r *Resolver) Infer(env *Env, n parser.Node) parser.Node {
 	panic(fmt.Sprintf("unimplemented: %T", n))
 }
 
-func (r *Resolver) Check(env *Env, node parser.Node, t Type) parser.Node {
-	tnode := r.Infer(env, node)
+func (r *Resolver) Check(node parser.Node, t Type) parser.Node {
+	tnode := r.Infer(node)
 	if tnode, ok := tnode.(TypedNode); ok {
 		if !r.Unify(tnode.Type, t) {
 			return parser.Illegal{Node: tnode.Node, Msg: fmt.Sprintf("expected %s, got %s", t, tnode.Type)}

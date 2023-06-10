@@ -24,6 +24,7 @@ type Definition struct {
 	ForwardStatus ForwardStatus       // is this a forward declaration?
 	Undefined     map[string]struct{} // if function or type that references undefined symbols, we can track them here.
 	Child         *Env
+	Type          Type
 }
 
 func NewDefinition(def, ctx parser.Node, forwardStatus ForwardStatus) Definition {
@@ -71,6 +72,18 @@ func (e *Env) LookupStack(name string) (d Definition, ok bool) {
 	return d, false
 }
 
+func (d *Env) SetType(name string, t Type) {
+	if name == "_" {
+		return
+	}
+	sym, ok := d.symbols[name]
+	if !ok {
+		panic(fmt.Sprintf("symbol %q not found", name))
+	}
+	sym.Type = t
+	d.symbols[name] = sym
+}
+
 // TODO: add builtins to this
 var Universe = &Env{
 	parent:  nil,
@@ -97,6 +110,7 @@ func (r *Resolver) ResolveBuild() {
 		path := path
 		pkg := r.importer.PkgCache[path].(parser.Package)
 		r.importer.PkgCache[path] = r.Resolve(Universe, ResolvedPackage{OriginalPackage: pkg, Path: path, Env: Universe})
+		r.importer.PkgCache[path] = r.Infer(r.importer.PkgCache[path])
 	}
 }
 
@@ -447,7 +461,8 @@ func (r *Resolver) Resolve(env *Env, n parser.Node) parser.Node {
 		for i := range origPkg.ScriptFiles {
 			// there should only be one script file in the whole build
 			scriptScope := packageScope.AddScope() // should this be env.AddScope()?
-			origPkg.ScriptFiles[i] = r.Infer(scriptScope, origPkg.ScriptFiles[i])
+			// origPkg.ScriptFiles[i] = r.Infer(scriptScope, origPkg.ScriptFiles[i])
+			origPkg.ScriptFiles[i] = r.Resolve(scriptScope, origPkg.ScriptFiles[i])
 		}
 		n.OriginalPackage = origPkg
 		sym := NewDefinition(n, nil, NotForward)
@@ -576,17 +591,31 @@ func (r *Resolver) Resolve(env *Env, n parser.Node) parser.Node {
 		n.X = r.Resolve(env, n.X)
 		return n
 	case parser.Tuple:
-		// Note: Tuple literals have an ambiguity in that they can be used for struct literals and map literals.
-		// Since we don't have type information, we can't resolve this ambiguity here.
-		// For struct literals, if a field name is assigned, and that ident isn't in scope, we treat that as an error
-		// and fix it up in type checking. If it *is* in scope, it is a false positive.
 		// In reality, if it's a struct, there should be a new scope created for the struct fields that are introduced.
 		tupleScope := env.AddScope()
 		for i := range n.Elements {
-			n.Elements[i] = r.Resolve(tupleScope, n.Elements[i])
+			// if it's an assignment to an ident, add lhs to scope. it shadows, but its introduction is unknown, since
+			// rhs is in parent scope.
+			if binExp, ok := n.Elements[i].(parser.BinaryExpr); ok && binExp.Op.Type == lexer.Equals {
+				binExp.Right = r.Resolve(env, binExp.Right)
+				if id, ok := binExp.Left.(parser.Ident); ok {
+					binExp.Left = r.defineDestructure(tupleScope, false, id, n, func(id string) {
+						setIllegals(tupleScope, id, binExp.Right)
+					})
+				} else {
+					// can't have a tuple assignment to a non-ident
+					binExp.Left = parser.Illegal{Node: binExp.Left, Msg: "can't have a tuple assignment to a non-ident"}
+				}
+				n.Elements[i] = binExp
+			} else {
+				n.Elements[i] = r.Resolve(env, n.Elements[i])
+			}
 		}
+		// if parent is a declaration, it should probably set child map
 		return n
 	case parser.LetDecl:
+		// TODO: deal with type vars introduced in the type annotation
+		// their scope should extend to the rhs
 		// resolve right, then introduce bindings. don't leave it up to the ident rule.
 		n.Rhs = r.Resolve(env, n.Rhs) // Does this correspond to my strategy?
 		n.Destructure = r.defineDestructure(env, false, n.Destructure, n, func(id string) {

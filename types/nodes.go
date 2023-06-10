@@ -9,6 +9,7 @@ import (
 
 var (
 	_ parser.Node = Var{}
+	// _ parser.Node = FieldName{}
 	_ parser.Node = TypeName{}
 	_ parser.Node = UnresolvedIdent{}
 	_ parser.Node = PackageName{}
@@ -36,6 +37,24 @@ func (v Var) LeadingTrivia() []lexer.Token {
 func (v Var) Span() lexer.Span {
 	return v.OriginalIdent.Span()
 }
+
+// type FieldName struct {
+// 	OriginalIdent parser.Node
+// 	// Reference to environment here.
+// 	Env *Env
+// }
+
+// func (v FieldName) ASTString(depth int) string {
+// 	return fmt.Sprintf("FieldName: %s", v.OriginalIdent.ASTString(depth))
+// }
+
+// func (v FieldName) LeadingTrivia() []lexer.Token {
+// 	return v.OriginalIdent.LeadingTrivia()
+// }
+
+// func (v FieldName) Span() lexer.Span {
+// 	return v.OriginalIdent.Span()
+// }
 
 type TypeName struct {
 	OriginalIdent parser.Node

@@ -1,5 +1,7 @@
 package types
 
+import "github.com/smasher164/gflat/parser"
+
 type Type interface {
 	// what should it be?
 	Equal(Type) bool
@@ -185,3 +187,20 @@ func SimpleEquals(t1, t2 Type) bool {
 	}
 	return false
 }
+
+type InvalidType struct {
+	Msg string
+}
+
+func (InvalidType) Equal(Type) bool {
+	panic("unimplemented")
+}
+
+func IsTyped(n parser.Node) bool {
+	_, ok := n.(TypedNode)
+	return ok
+}
+
+// func GetType(n parser.Node) Type {
+// 	return n.(TypedNode).Type
+// }
