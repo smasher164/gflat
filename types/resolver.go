@@ -761,8 +761,8 @@ func (r *Resolver) Resolve(env *Env, n parser.Node) parser.Node {
 		n.X = r.Resolve(env, n.X)
 		n.Name = Select(n.X, n.Name)
 		return n
-	case parser.StringPart:
-	case parser.String:
+	case parser.BasicString:
+	case parser.InterpolatedString:
 	case parser.IndexExpr:
 		n.X = r.Resolve(env, n.X)
 		for i := range n.IndexElements {
@@ -798,8 +798,8 @@ func (r *Resolver) Resolve(env *Env, n parser.Node) parser.Node {
 			}
 			n.Binding = bind
 		default:
-			if spath, ok := n.Path.(parser.String); ok {
-				if spath, ok := spath.Parts[0].(parser.StringPart); ok {
+			if spath, ok := n.Path.(parser.InterpolatedString); ok {
+				if spath, ok := spath.Parts[0].(parser.BasicString); ok {
 					importPath := spath.Lit.Data
 					if prefix, _, ok := module.SplitPathVersion(importPath); ok {
 						id := path.Base(prefix)

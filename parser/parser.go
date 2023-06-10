@@ -366,13 +366,13 @@ func (p *parser) parseString() Node {
 	defer p.trace("parseString")()
 	switch tok := p.tok; tok.Type {
 	case lexer.StringBeg:
-		var str String
-		str.Parts = append(str.Parts, StringPart{Lit: p.tok})
+		var str InterpolatedString
+		str.Parts = append(str.Parts, BasicString{Lit: p.tok})
 		p.next()
 		for p.tok.Type != lexer.StringEnd && p.tok.Type != lexer.EOF {
 			str.Parts = append(str.Parts, p.parseExpr())
 			if p.tok.Type == lexer.StringPart {
-				str.Parts = append(str.Parts, StringPart{Lit: p.tok})
+				str.Parts = append(str.Parts, BasicString{Lit: p.tok})
 				p.next()
 			} else if p.tok.Type != lexer.StringEnd {
 				panic("expected string part or end")
@@ -381,12 +381,12 @@ func (p *parser) parseString() Node {
 		if p.tok.Type != lexer.StringEnd {
 			panic("expected string end")
 		}
-		str.Parts = append(str.Parts, StringPart{Lit: p.tok})
+		str.Parts = append(str.Parts, BasicString{Lit: p.tok})
 		p.next()
 		return str
 	case lexer.String:
 		p.next()
-		return String{Parts: []Node{StringPart{Lit: tok}}}
+		return BasicString{Lit: tok}
 	}
 	panic("expected string")
 }
@@ -1385,16 +1385,16 @@ func (p *parser) parseImportDeclPackage() Node {
 	default:
 		panic("invalid import declaration")
 	}
-	if path, ok := importDecl.Path.(String); ok {
-		if path, ok := path.Parts[0].(StringPart); ok {
-			// unquote import path
-			// TODO: make this more robust
-			importPath, err := strconv.Unquote(path.Lit.Data)
-			if err != nil {
-				panic(fmt.Errorf("invalid import path: %v", err))
-			}
-			p.imports[importPath] = struct{}{}
+	if path, ok := importDecl.Path.(BasicString); ok {
+		// unquote import path
+		// TODO: make this more robust
+		importPath, err := strconv.Unquote(path.Lit.Data)
+		if err != nil {
+			panic(fmt.Errorf("invalid import path: %v", err))
 		}
+		p.imports[importPath] = struct{}{}
+	} else {
+		panic("cannot import interpolated string")
 	}
 	return importDecl
 }

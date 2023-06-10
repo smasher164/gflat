@@ -143,6 +143,8 @@ func (r *Resolver) Infer(n parser.Node) parser.Node {
 			return n
 		}
 		return TypedNode{Node: n, Type: def.Type}
+	case parser.BasicString:
+		return TypedNode{Node: n, Type: String}
 		// ignore tuples for now
 		// no let-gen or inferred function signatures for now
 		// get type annotation

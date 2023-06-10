@@ -48,8 +48,8 @@ var (
 	_ Node = SelectorExpr{}
 	_ Node = PatternCase{}
 	_ Node = IfMatch{}
-	_ Node = StringPart{}
-	_ Node = String{}
+	_ Node = BasicString{}
+	_ Node = InterpolatedString{}
 	_ Node = IndexExpr{}
 	_ Node = ImportDecl{}
 	_ Node = ImportDeclPackage{}
@@ -958,42 +958,39 @@ func (i IfMatch) ASTString(depth int) string {
 		printNodeSlice(depth+1, i.Cases))
 }
 
-type StringPart struct {
+type BasicString struct {
 	Lit lexer.Token
 }
 
-func (s StringPart) LeadingTrivia() []lexer.Token {
+func (s BasicString) LeadingTrivia() []lexer.Token {
 	return s.Lit.LeadingTrivia
 }
 
-func (s StringPart) Span() lexer.Span {
+func (s BasicString) Span() lexer.Span {
 	return s.Lit.Span
 }
 
-func (s StringPart) ASTString(depth int) string {
-	return fmt.Sprintf("StringPart %s", s.Lit)
+func (s BasicString) ASTString(depth int) string {
+	return fmt.Sprintf("BasicString %s", s.Lit)
 }
 
-type String struct {
+type InterpolatedString struct {
 	Parts []Node
 }
 
-func (s String) LeadingTrivia() []lexer.Token {
+func (s InterpolatedString) LeadingTrivia() []lexer.Token {
 	if len(s.Parts) == 0 {
 		return nil
 	}
 	return leadingTriviaOf(s.Parts[0])
 }
 
-func (s String) Span() lexer.Span {
+func (s InterpolatedString) Span() lexer.Span {
 	return spanOf(s.Parts)
 }
 
-func (s String) ASTString(depth int) string {
-	if len(s.Parts) == 1 {
-		return fmt.Sprintf("String: %s", s.Parts[0].(StringPart).Lit)
-	}
-	return fmt.Sprintf("String\n%sParts: %s", indent(depth+1), printNodeSlice(depth+1, s.Parts))
+func (s InterpolatedString) ASTString(depth int) string {
+	return fmt.Sprintf("InterpolatedString\n%sParts: %s", indent(depth+1), printNodeSlice(depth+1, s.Parts))
 }
 
 /*
