@@ -546,7 +546,7 @@ func (l LetDecl) Span() lexer.Span {
 }
 
 func (l LetDecl) ASTString(depth int) string {
-	if l.Equals.Type != lexer.Equals {
+	if l.Equals.Type != lexer.Assign {
 		return fmt.Sprintf(
 			"LetDecl\n%sLet: %s\n%sDestructure: %s",
 			indent(depth+1),
@@ -684,7 +684,7 @@ func (t TypeDecl) ASTString(depth int) string {
 	if t.With.Type == lexer.With {
 		fmt.Fprintf(buf, "\n%sWith: %s\n%sClause: %s", indent(depth+1), t.With, indent(depth+1), t.Clause.ASTString(depth+1))
 	}
-	if t.Equal.Type == lexer.Equals {
+	if t.Equal.Type == lexer.Assign {
 		fmt.Fprintf(buf, "\n%sEqual: %s\n%sBody: %s", indent(depth+1), t.Equal, indent(depth+1), t.Body.ASTString(depth+1))
 	}
 	return buf.String()

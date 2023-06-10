@@ -377,7 +377,7 @@ func (r *Resolver) defineResolveTypeAnnotation(env *Env, define bool, n, ctx par
 				if len(elem.Elements) >= 1 {
 					if comm, ok := elem.Elements[0].(parser.CommaElement); ok {
 						if binExp, ok := comm.X.(parser.BinaryExpr); ok {
-							if _, ok := binExp.Left.(parser.TypeArg); ok && binExp.Op.Type == lexer.Equals {
+							if _, ok := binExp.Left.(parser.TypeArg); ok && binExp.Op.Type == lexer.Assign {
 								n.Elements[i] = r.resolveTypeAssignment(env, define, elem, lastCaller, ctx)
 								break
 							}
@@ -596,7 +596,7 @@ func (r *Resolver) Resolve(env *Env, n parser.Node) parser.Node {
 		for i := range n.Elements {
 			// if it's an assignment to an ident, add lhs to scope. it shadows, but its introduction is unknown, since
 			// rhs is in parent scope.
-			if binExp, ok := n.Elements[i].(parser.BinaryExpr); ok && binExp.Op.Type == lexer.Equals {
+			if binExp, ok := n.Elements[i].(parser.BinaryExpr); ok && binExp.Op.Type == lexer.Assign {
 				binExp.Right = r.Resolve(env, binExp.Right)
 				if id, ok := binExp.Left.(parser.Ident); ok {
 					binExp.Left = r.defineDestructure(tupleScope, false, id, n, func(id string) {
@@ -893,7 +893,7 @@ func resolveUnresolved(env *Env, body parser.Node) parser.Node {
 		case parser.CommaElement:
 			var quit bool
 			if binExp, ok := n.X.(parser.BinaryExpr); ok {
-				if nid, ok := binExp.Left.(Var); ok && binExp.Op.Type == lexer.Equals {
+				if nid, ok := binExp.Left.(Var); ok && binExp.Op.Type == lexer.Assign {
 					binExp.Left = UnresolvedIdent(nid)
 				} else {
 					binExp.Left, quit = rec(binExp.Left)

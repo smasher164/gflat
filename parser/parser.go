@@ -187,7 +187,7 @@ func (p *parser) parseLetDecl() Node {
 			letFun.Signature = p.parseFunctionSignature()
 			if p.tok.Type == lexer.LineTerminator && p.peek().Type == lexer.LeftBrace {
 				p.next()
-			} else if p.tok.Type == lexer.Equals {
+			} else if p.tok.Type == lexer.Assign {
 				letFun.Equals = p.tok
 				p.next()
 			} else if p.tok.Type != lexer.LeftBrace {
@@ -206,7 +206,7 @@ func (p *parser) parseLetDecl() Node {
 	if isIllegal(decl.Destructure) {
 		return decl.Destructure
 	}
-	if p.tok.Type != lexer.Equals {
+	if p.tok.Type != lexer.Assign {
 		if p.tok.Type == lexer.FatArrow {
 			panic("expected = or { after function signature")
 		}
@@ -243,7 +243,7 @@ func (p *parser) restDecl() (lhs Node, equals lexer.Token, rhs Node) {
 	if isIllegal(lhs) {
 		return lhs, lexer.Token{}, nil
 	}
-	if p.tok.Type != lexer.Equals {
+	if p.tok.Type != lexer.Assign {
 		return Illegal{Node: lhs, Msg: "expected = after let declaration"}, lexer.Token{}, nil
 	}
 	equals = p.tok
@@ -316,7 +316,7 @@ func (p *parser) parseFun() Node {
 		fun.FatArrow = p.tok
 		p.next()
 	} else if p.tok.Type != lexer.LeftBrace {
-		if p.tok.Type == lexer.Equals {
+		if p.tok.Type == lexer.Assign {
 			panic("expected => or { after function signature")
 		}
 		// handle forward declarations
@@ -792,7 +792,7 @@ func (p *parser) parseTuplePattern() Node {
 	p.next()
 	for p.tok.Type != lexer.RightParen && p.tok.Type != lexer.EOF {
 		var elem CommaElement
-		if p.tok.Type == lexer.Ident && p.peek().Type == lexer.Equals {
+		if p.tok.Type == lexer.Ident && p.peek().Type == lexer.Assign {
 			id := p.tok
 			p.next()
 			elem.X = BinaryExpr{
@@ -952,7 +952,7 @@ func (p *parser) parseTypeDecl() Node {
 		p.next()
 		typeDecl.Clause = p.parseWithClause()
 	}
-	if p.tok.Type != lexer.Equals {
+	if p.tok.Type != lexer.Assign {
 		// allow forward declarations
 		return typeDecl
 	}
@@ -968,7 +968,7 @@ func (p *parser) parseTupleTypeConstraint(parseAssignment bool) Node {
 	shouldInsert := p.shouldInsertAfter
 	toksToCheck := p.afterToksToCheck
 	p.shouldInsertDelimAfter(false)
-	if p.peek().Type == lexer.TypeArg && p.peek2().Type == lexer.Equals {
+	if p.peek().Type == lexer.TypeArg && p.peek2().Type == lexer.Assign {
 		if !parseAssignment {
 			panic("unexpected assignment")
 		}
@@ -979,7 +979,7 @@ func (p *parser) parseTupleTypeConstraint(parseAssignment bool) Node {
 		for p.tok.Type != lexer.RightParen && p.tok.Type != lexer.EOF {
 			var elem CommaElement
 			typeArg := p.parseNamedTypeArgument()
-			if p.tok.Type != lexer.Equals {
+			if p.tok.Type != lexer.Assign {
 				panic("missing equals in type assignment")
 			}
 			equals := p.tok
@@ -1289,7 +1289,7 @@ func (p *parser) parseTupleType() Node {
 				field.Colon = p.tok
 				p.next()
 				field.Type = p.parseTypeBody(false, false)
-				if p.tok.Type == lexer.Equals {
+				if p.tok.Type == lexer.Assign {
 					field.Equals = p.tok
 					p.next()
 					field.Default = p.parseExpr()
@@ -1350,7 +1350,7 @@ func (p *parser) parseImportDeclPackage() Node {
 	case lexer.Ident:
 		alias := p.tok
 		p.next()
-		if p.tok.Type != lexer.Equals {
+		if p.tok.Type != lexer.Assign {
 			panic("missing equals")
 		}
 		equals := p.tok
@@ -1368,7 +1368,7 @@ func (p *parser) parseImportDeclPackage() Node {
 		// tuple of identifiers
 		// tup := p.parseIdentTuple()
 		tup := p.parseImportTuple()
-		if p.tok.Type != lexer.Equals {
+		if p.tok.Type != lexer.Assign {
 			panic("missing equals")
 		}
 		equals := p.tok
@@ -1469,7 +1469,7 @@ func (p *parser) parseImplDecl() Node {
 		p.next()
 		impl.Clause = p.parseWithClause()
 	}
-	if p.tok.Type == lexer.Equals {
+	if p.tok.Type == lexer.Assign {
 		impl.Equals = p.tok
 		p.next()
 		impl.Body = p.parseExpr()

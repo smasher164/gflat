@@ -22,7 +22,7 @@ func _() {
 	_ = x[Backtick-11]
 	_ = x[LessThan-12]
 	_ = x[GreaterThan-13]
-	_ = x[Equals-14]
+	_ = x[Assign-14]
 	_ = x[Colon-15]
 	_ = x[Not-16]
 	_ = x[Comma-17]
@@ -79,7 +79,7 @@ func _() {
 	_ = x[Illegal-68]
 }
 
-const _TokenType_name = "EOFLineTerminatorPlusMinusTimesDivideRemainderAndOrCaretTildeBacktickLessThanGreaterThanEqualsColonNotCommaPeriodSemicolonLeftParenRightParenLeftBraceRightBraceLeftBracketRightBracketDollarSignQuestionMarkLogicalAndLogicalOrLeftShiftRightShiftLogicalEqualsFatArrowNotEqualsLessThanEqualsGreaterThanEqualsColonEqualsExponentiationDotDotLeftArrowRightArrowFunTypeTraitImportLetVarIfElseCaseMatchPackageIsoRefMutPubWithImplIdentNumberTypeArgWhitespaceSingleLineCommentStringBegStringPartStringEndStringIllegal"
+const _TokenType_name = "EOFLineTerminatorPlusMinusTimesDivideRemainderAndOrCaretTildeBacktickLessThanGreaterThanAssignColonNotCommaPeriodSemicolonLeftParenRightParenLeftBraceRightBraceLeftBracketRightBracketDollarSignQuestionMarkLogicalAndLogicalOrLeftShiftRightShiftLogicalEqualsFatArrowNotEqualsLessThanEqualsGreaterThanEqualsColonEqualsExponentiationDotDotLeftArrowRightArrowFunTypeTraitImportLetVarIfElseCaseMatchPackageIsoRefMutPubWithImplIdentNumberTypeArgWhitespaceSingleLineCommentStringBegStringPartStringEndStringIllegal"
 
 var _TokenType_index = [...]uint16{0, 3, 17, 21, 26, 31, 37, 46, 49, 51, 56, 61, 69, 77, 88, 94, 99, 102, 107, 113, 122, 131, 141, 150, 160, 171, 183, 193, 205, 215, 224, 233, 243, 256, 264, 273, 287, 304, 315, 329, 335, 344, 354, 357, 361, 366, 372, 375, 378, 380, 384, 388, 393, 400, 403, 406, 409, 412, 416, 420, 425, 431, 438, 448, 465, 474, 484, 493, 499, 506}
 

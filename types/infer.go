@@ -67,13 +67,7 @@ func (r *Resolver) Infer(n parser.Node) parser.Node {
 				}
 			}
 			return n
-		case lexer.Minus:
-		case lexer.Times:
-		case lexer.Divide:
-		case lexer.Remainder:
-		case lexer.LeftShift:
-		case lexer.RightShift:
-		case lexer.And, lexer.Caret, lexer.Exponentiation:
+		case lexer.Minus, lexer.Times, lexer.LeftShift, lexer.RightShift, lexer.Remainder, lexer.Divide, lexer.And, lexer.Caret, lexer.Exponentiation:
 			n.Left = r.Check(n.Left, Int)
 			n.Right = r.Check(n.Right, Int)
 			if IsTyped(n.Left) && IsTyped(n.Right) {
@@ -88,8 +82,7 @@ func (r *Resolver) Infer(n parser.Node) parser.Node {
 				return TypedNode{Node: n, Type: n.Left.(TypedNode).Type}
 			}
 			return n
-		case lexer.Equals:
-			// this is for assignment
+		case lexer.Assign:
 			// TODO: ensure that let bindings are immutable and you can't assign
 			n.Left = r.Infer(n.Left)
 			if tleft, ok := n.Left.(TypedNode); ok {

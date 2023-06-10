@@ -114,7 +114,7 @@ func TestLexer(t *testing.T) {
 		singleWS(Pos{31, 1, 32}, Or, Pos{32, 1, 33}),
 		singleWS(Pos{33, 1, 34}, LessThan, Pos{34, 1, 35}),
 		singleWS(Pos{35, 1, 36}, GreaterThan, Pos{36, 1, 37}),
-		singleWS(Pos{37, 1, 38}, Equals, Pos{38, 1, 39}),
+		singleWS(Pos{37, 1, 38}, Assign, Pos{38, 1, 39}),
 		singleWS(Pos{39, 1, 40}, Not, Pos{40, 1, 41}),
 		singleWS(Pos{41, 1, 42}, Colon, Pos{42, 1, 43}),
 		singleWS(Pos{43, 1, 44}, Period, Pos{44, 1, 45}),

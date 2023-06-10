@@ -28,7 +28,7 @@ const (
 	LessThan
 	GreaterThan
 
-	Equals
+	Assign
 	Colon
 	Not
 	Comma
@@ -112,7 +112,7 @@ var SingleCharTokens = map[rune]TokenType{
 	'|': Or,
 	'<': LessThan,
 	'>': GreaterThan,
-	'=': Equals,
+	'=': Assign,
 	'!': Not,
 	':': Colon,
 	'.': Period,
@@ -236,7 +236,7 @@ func (a Token) ExactEq(b Token) bool {
 
 func (t Token) IsBinaryOp() bool {
 	switch t.Type {
-	case DotDot, Plus, Minus, Times, Divide, Remainder, LeftShift, RightShift, And, Or, Caret, LogicalAnd, LogicalOr, LogicalEquals, NotEquals, Equals, LessThan, LessThanEquals, GreaterThan, GreaterThanEquals, LeftArrow, Exponentiation, Colon:
+	case DotDot, Plus, Minus, Times, Divide, Remainder, LeftShift, RightShift, And, Or, Caret, LogicalAnd, LogicalOr, LogicalEquals, NotEquals, Assign, LessThan, LessThanEquals, GreaterThan, GreaterThanEquals, LeftArrow, Exponentiation, Colon:
 		return true
 	}
 	return false
@@ -292,7 +292,7 @@ func (t Token) Prec() int {
 		return 3
 	case DotDot:
 		return 2
-	case Equals, LeftArrow:
+	case Assign, LeftArrow:
 		return 1
 	}
 	return 0
@@ -308,7 +308,7 @@ func (t Token) IsLeftAssoc() bool {
 
 func (t Token) IsRightAssoc() bool {
 	switch t.Type {
-	case Exponentiation, LeftArrow, Equals:
+	case Exponentiation, LeftArrow, Assign:
 		return true
 	}
 	return false
