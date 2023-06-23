@@ -36,6 +36,7 @@ var (
 	_ Node = IfElse{}
 	_ Node = TypeDecl{}
 	_ Node = Number{}
+	_ Node = Array{}
 	_ Node = TypeArg{}
 	_ Node = SumType{}
 	_ Node = SumTypeElement{}

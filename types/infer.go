@@ -54,6 +54,7 @@ func (r *Resolver) Infer(n parser.Node) parser.Node {
 		// based on the actual op
 		switch n.Op.Type {
 		case lexer.DotDot:
+			// need traits
 		case lexer.Plus:
 			n.Left = r.Infer(n.Left)
 			if tleft, ok := n.Left.(TypedNode); ok {
@@ -74,7 +75,8 @@ func (r *Resolver) Infer(n parser.Node) parser.Node {
 				return TypedNode{Node: n, Type: n.Left.(TypedNode).Type}
 			}
 			return n
-		case lexer.Or:
+		case lexer.Or: // or or pipe?
+			// need traits, but for now, just check that the rhs is a function
 		case lexer.LogicalAnd, lexer.LogicalOr:
 			n.Left = r.Check(n.Left, Bool)
 			n.Right = r.Check(n.Right, Bool)
@@ -111,12 +113,9 @@ func (r *Resolver) Infer(n parser.Node) parser.Node {
 			return n
 		case lexer.LeftArrow:
 		case lexer.Colon:
-		}
+			// ascription
 
-		// tRight := r.Infer(env, n.Right)
-		// switch n.Op {
-		// case DotDot, Plus, Minus, Times, Divide, Remainder, LeftShift, RightShift, And, Or, Caret, LogicalAnd, LogicalOr, LogicalEquals, NotEquals, Equals, LessThan, LessThanEquals, GreaterThan, GreaterThanEquals, LeftArrow, Exponentiation, Colon:
-		// }
+		}
 	case parser.Number:
 		// TODO: Number trait
 		return TypedNode{Node: n, Type: Int}
@@ -125,15 +124,26 @@ func (r *Resolver) Infer(n parser.Node) parser.Node {
 		return TypedNode{Node: n, Type: Unit}
 	case parser.LetDecl:
 		n.Rhs = r.Infer(n.Rhs)
-		rtyp, ok := n.Rhs.(TypedNode)
+		typedRHS, ok := n.Rhs.(TypedNode)
 		if !ok {
 			return n
 		}
 		switch des := n.Destructure.(type) {
 		case Var:
 			id := des.OriginalIdent.(parser.Ident).Name.Data
-			n.Destructure = TypedNode{Node: des, Type: rtyp.Type}
-			des.Env.SetType(id, rtyp.Type)
+			n.Destructure = TypedNode{Node: des, Type: typedRHS.Type}
+			des.Env.SetType(id, typedRHS.Type)
+		case parser.TypeAnnotation:
+			// build a type from the type annotation
+			typ := r.TypeFromSyntax(des.Type)
+			if typedRHS, ok := r.Check(typedRHS, typ).(TypedNode); ok {
+				if v, ok := des.Destructure.(Var); ok {
+					// only handle vars for now
+					id := v.OriginalIdent.(parser.Ident).Name.Data
+					n.Destructure = TypedNode{Node: v, Type: typedRHS.Type}
+					v.Env.SetType(id, typedRHS.Type)
+				}
+			}
 		}
 		return n
 	case Var:
@@ -145,50 +155,56 @@ func (r *Resolver) Infer(n parser.Node) parser.Node {
 		return TypedNode{Node: n, Type: def.Type}
 	case parser.BasicString:
 		return TypedNode{Node: n, Type: String}
-		// ignore tuples for now
+	case parser.Tuple:
+		var tuple Tuple
+		for _, e := range n.Elements {
+			var field Field
+			if elem, ok := e.(parser.CommaElement); ok {
+				if binExp, ok := elem.X.(parser.BinaryExpr); ok && binExp.Op.Type == lexer.Assign {
+					if id, ok := binExp.Left.(Var); ok {
+						field.Name = getID(id)
+						inferredField := r.Infer(binExp.Right)
+						if fieldType, ok := inferredField.(TypedNode); ok {
+							field.Type = fieldType.Type
+							field.Env = id.Env
+							sym := field.Env.symbols[field.Name]
+							sym.Type = field.Type
+							field.Env.symbols[field.Name] = sym
+							tuple.Fields = append(tuple.Fields, field)
+							continue
+						}
+					}
+				}
+				if it, ok := r.Infer(elem.X).(TypedNode); ok {
+					field.Type = it.Type
+					tuple.Fields = append(tuple.Fields, field)
+				} else {
+					field.Type = InvalidType{Msg: "invalid type in field"}
+					tuple.Fields = append(tuple.Fields, field)
+				}
+			}
+		}
+		return TypedNode{Node: n, Type: tuple}
+	case parser.Function:
+	case parser.LetFunction:
 		// no let-gen or inferred function signatures for now
 		// get type annotation
-		// rhsEnv := env.AddScope()
-		// switch des := n.Destructure.(type) {
-		// case parser.Ident:
-		// 	id := des.Name.Data
-		// 	n.Rhs = r.Infer(rhsEnv, n.Rhs)
-		// 	if _, ok := env.LookupLocal(id); ok {
-		// 		n.Destructure = parser.Illegal{Node: des, Msg: fmt.Sprintf("redefinition of %s", id)}
-		// 	} else {
-		// 		if trhs, ok := n.Rhs.(TypedNode); ok {
-		// 			n.Destructure = TypedNode{Node: Var{OriginalIdent: des, Env: env}, Type: trhs.Type}
-		// 		} else {
-		// 			n.Destructure = parser.Illegal{Node: des, Msg: "rhs does not have a valid type"}
-		// 		}
-		// 		if id != "_" {
-		// 			env.AddSymbol(id, NewDefinition(n.Destructure, des, NotForward))
-		// 		}
-		// 	}
-		// }
-		// return n
-		// case parser.Ident:
-		// 	def, ok := env.LookupStack(n.Name.Data)
-		// 	if ok {
-		// 		return def.Def
-		// 	}
-		// 	return UnresolvedIdent{OriginalIdent: n, Env: env}
-		// add binding to current scope
-
-		/*
-		   this is how our old resolver code used to look:
-		   		// resolve right, then introduce bindings. don't leave it up to the ident rule.
-		   		n.Rhs = r.Resolve(env, n.Rhs) // Does this correspond to my strategy?
-		   		n.Destructure = r.defineDestructure(env, false, n.Destructure, n, func(id string) {
-		   			// setIllegalsUsingWalk(env, id, n.Rhs)
-		   			setIllegals(env, id, n.Rhs)
-		   		})
-		   		return n
-		*/
-		// Create a new scope for the rhs.
-		// Define new type variables based on destructure.
 	}
 	panic(fmt.Sprintf("unimplemented: %T", n))
+}
+
+func (r *Resolver) TypeFromSyntax(node parser.Node) Type {
+	switch node := node.(type) {
+	case TypeName:
+		id := getID(node)
+		// look up type name in env?
+		if def, ok := node.Env.LookupStack(id); ok {
+			return def.Type
+		}
+		return InvalidType{Msg: fmt.Sprintf("unknown type %s", id)}
+		// return NodedType{OriginalNode: node, Type: }
+	}
+	panic("unimplemented")
 }
 
 func (r *Resolver) Check(node parser.Node, t Type) parser.Node {
@@ -257,5 +273,39 @@ func (r *Resolver) Unify(t1, t2 Type) bool {
 			return true
 		}
 	}
+	if t1, ok := t1.(Array); ok {
+		if t2, ok := t2.(Array); ok {
+			if t1.Length == t2.Length {
+				return r.Unify(t1.Element, t2.Element)
+			}
+			return false
+		}
+	}
+	if t1, ok := t1.(Slice); ok {
+		if t2, ok := t2.(Slice); ok {
+			return r.Unify(t1.Element, t2.Element)
+		}
+	}
+	if tapp1, ok := t1.(TypeApplication); ok {
+		if tapp2, ok := t2.(TypeApplication); ok {
+			if len(tapp1.Elements) != len(tapp2.Elements) {
+				return false
+			}
+			for i := range tapp1.Elements {
+				if !r.Unify(tapp1.Elements[i], tapp2.Elements[i]) {
+					return false
+				}
+			}
+			return true
+		}
+	}
+	/*
+		// TODO: support type schemes, like type applications.
+		Sum
+		Tuple
+		Map
+		Forall
+		TypeApplication
+	*/
 	return false
 }

@@ -441,6 +441,7 @@ func resolveTopLevel(env *Env, n parser.Node) parser.Node {
 	panic("TODO")
 }
 
+// TODO: forward declarations for local defs?
 func (r *Resolver) Resolve(env *Env, n parser.Node) parser.Node {
 	switch n := n.(type) {
 	case parser.BinaryExpr:
@@ -596,17 +597,23 @@ func (r *Resolver) Resolve(env *Env, n parser.Node) parser.Node {
 		for i := range n.Elements {
 			// if it's an assignment to an ident, add lhs to scope. it shadows, but its introduction is unknown, since
 			// rhs is in parent scope.
-			if binExp, ok := n.Elements[i].(parser.BinaryExpr); ok && binExp.Op.Type == lexer.Assign {
-				binExp.Right = r.Resolve(env, binExp.Right)
-				if id, ok := binExp.Left.(parser.Ident); ok {
-					binExp.Left = r.defineDestructure(tupleScope, false, id, n, func(id string) {
-						setIllegals(tupleScope, id, binExp.Right)
-					})
+			// TODO: this has a bug because it should be inside a CommaElement.
+			if elem, ok := n.Elements[i].(parser.CommaElement); ok {
+				if binExp, ok := elem.X.(parser.BinaryExpr); ok && binExp.Op.Type == lexer.Assign {
+					binExp.Right = r.Resolve(env, binExp.Right)
+					if id, ok := binExp.Left.(parser.Ident); ok {
+						binExp.Left = r.defineDestructure(tupleScope, false, id, n, func(id string) {
+							setIllegals(tupleScope, id, binExp.Right)
+						})
+					} else {
+						// can't have a tuple assignment to a non-ident
+						binExp.Left = parser.Illegal{Node: binExp.Left, Msg: "can't have a tuple assignment to a non-ident"}
+					}
+					elem.X = binExp
+					n.Elements[i] = elem
 				} else {
-					// can't have a tuple assignment to a non-ident
-					binExp.Left = parser.Illegal{Node: binExp.Left, Msg: "can't have a tuple assignment to a non-ident"}
+					n.Elements[i] = r.Resolve(env, n.Elements[i])
 				}
-				n.Elements[i] = binExp
 			} else {
 				n.Elements[i] = r.Resolve(env, n.Elements[i])
 			}
@@ -614,6 +621,13 @@ func (r *Resolver) Resolve(env *Env, n parser.Node) parser.Node {
 		// if parent is a declaration, it should probably set child map
 		return n
 	case parser.LetDecl:
+		// rhsScope := env.AddScope()
+		// if letType, ok := n.Destructure.(parser.TypeAnnotation); ok {
+		// 	// TODO: This doesn't handle ttype vars introduced in a tuple destructure.
+		// 	letType.Type = r.defineResolveTypeAnnotation(rhsScope, true, letType.Type, n)
+		// 	n.Rhs = r.Resolve(rhsScope, n.Rhs)
+		// }
+		// TODO: modify defineDestructure to take two envs?
 		// TODO: deal with type vars introduced in the type annotation
 		// their scope should extend to the rhs
 		// resolve right, then introduce bindings. don't leave it up to the ident rule.
@@ -662,7 +676,6 @@ func (r *Resolver) Resolve(env *Env, n parser.Node) parser.Node {
 			// }
 			// n.Cases[i] =
 			pat := patternCase.Pattern
-			patternCase = n.Cases[i].(parser.PatternCase)
 			patternCase.Pattern = r.defineDestructure(patternScope, false, pat, patternCase, func(id string) {
 				setIllegals(patternScope, id, n.IfHeader)
 			})

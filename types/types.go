@@ -181,6 +181,7 @@ func SimpleEquals(t1, t2 Type) bool {
 			if !ok1 || !ok2 {
 				panic("unreachable")
 			}
+			// is this correct? i assume this is reference equality.
 			return a.Def == b.Def
 			// return t1.Name == t2.Name
 		}
@@ -201,6 +202,26 @@ func IsTyped(n parser.Node) bool {
 	return ok
 }
 
+// is this necessary?
+type NodedType struct {
+	OriginalNode parser.Node
+	Type         Type
+}
+
+func (n NodedType) Equal(other Type) bool {
+	return n.Type.Equal(other)
+}
+
 // func GetType(n parser.Node) Type {
 // 	return n.(TypedNode).Type
 // }
+
+// TODO: Type schemes like type applications
+
+type TypeApplication struct {
+	Elements []Type
+}
+
+func (TypeApplication) Equal(Type) bool {
+	panic("unimplemented")
+}

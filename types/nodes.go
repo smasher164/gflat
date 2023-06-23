@@ -185,3 +185,21 @@ func (v UnresolvedTypeArg) LeadingTrivia() []lexer.Token {
 func (v UnresolvedTypeArg) Span() lexer.Span {
 	return v.OriginalTypeVar.Span()
 }
+
+func getID(n parser.Node) string {
+	switch n := n.(type) {
+	case parser.Ident:
+		return n.Name.Data
+	case Var:
+		return getID(n.OriginalIdent)
+	case TypeName:
+		return getID(n.OriginalIdent)
+	case Cons:
+		return getID(n.OriginalIdent)
+	case PackageName:
+		return getID(n.OriginalIdent)
+	case UnresolvedIdent:
+		return getID(n.OriginalIdent)
+	}
+	panic("unreachable")
+}
