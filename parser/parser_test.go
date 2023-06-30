@@ -162,7 +162,7 @@ func TestFile(t *testing.T) {
 			// | Maybe.None => 0
 			// `),
 			Data: []byte(`
-			a.. ..b
+			open file ?> ctx $"could not open {file}" |> readFile
 			`),
 		},
 	}

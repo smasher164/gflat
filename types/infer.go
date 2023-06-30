@@ -68,15 +68,16 @@ func (r *Resolver) Infer(n parser.Node) parser.Node {
 				}
 			}
 			return n
-		case lexer.Minus, lexer.Times, lexer.LeftShift, lexer.RightShift, lexer.Remainder, lexer.Divide, lexer.And, lexer.Caret, lexer.Exponentiation:
+		case lexer.Minus, lexer.Times, lexer.LeftShift, lexer.RightShift, lexer.Remainder, lexer.Divide, lexer.Or, lexer.And, lexer.Caret, lexer.Exponentiation:
 			n.Left = r.Check(n.Left, Int)
 			n.Right = r.Check(n.Right, Int)
 			if IsTyped(n.Left) && IsTyped(n.Right) {
 				return TypedNode{Node: n, Type: n.Left.(TypedNode).Type}
 			}
 			return n
-		case lexer.Or: // or or pipe?
-			// need traits, but for now, just check that the rhs is a function
+		case lexer.Pipe:
+		case lexer.QuestionPipe:
+		// need traits, but for now, just check that the rhs is a function
 		case lexer.LogicalAnd, lexer.LogicalOr:
 			n.Left = r.Check(n.Left, Bool)
 			n.Right = r.Check(n.Right, Bool)

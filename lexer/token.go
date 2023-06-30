@@ -47,6 +47,8 @@ const (
 	LogicalOr
 	LeftShift
 	RightShift
+	Pipe
+	QuestionPipe
 	LogicalEquals
 	FatArrow
 	NotEquals
@@ -135,6 +137,8 @@ var DoubleCharTokens = map[[2]rune]TokenType{
 	{'!', '='}: NotEquals,
 	{':', '='}: ColonEquals,
 	{'.', '.'}: DotDot,
+	{'|', '>'}: Pipe,
+	{'?', '>'}: QuestionPipe,
 }
 
 var Keywords = map[string]TokenType{
@@ -236,7 +240,7 @@ func (a Token) ExactEq(b Token) bool {
 
 func (t Token) IsBinaryOp() bool {
 	switch t.Type {
-	case DotDot, Plus, Minus, Times, Divide, Remainder, LeftShift, RightShift, And, Or, Caret, LogicalAnd, LogicalOr, LogicalEquals, NotEquals, Assign, LessThan, LessThanEquals, GreaterThan, GreaterThanEquals, LeftArrow, Exponentiation, Colon:
+	case DotDot, Plus, Minus, Times, Divide, Remainder, LeftShift, RightShift, And, Or, Caret, LogicalAnd, LogicalOr, LogicalEquals, NotEquals, Assign, LessThan, LessThanEquals, GreaterThan, GreaterThanEquals, LeftArrow, Exponentiation, Colon, Pipe, QuestionPipe:
 		return true
 	}
 	return false
@@ -256,41 +260,24 @@ const MinPrec = 1
 
 // In typechecking, handle ambiguity around certain operators.
 func (t Token) Prec() int {
-	// switch t.Type {
-	// case Colon:
-	// 	return 8
-	// case Exponentiation:
-	// 	return 7
-	// case Times, Divide, Remainder, And, LeftShift, RightShift:
-	// 	return 6
-	// case Plus, Minus, Or, Caret:
-	// 	return 5
-	// case LogicalEquals, NotEquals, LessThan, GreaterThan, LessThanEquals, GreaterThanEquals:
-	// 	return 4
-	// case LogicalAnd:
-	// 	return 3
-	// case LogicalOr:
-	// 	return 2
-	// case Equals, LeftArrow:
-	// 	return 1
-	// }
-	// return 0
 	switch t.Type {
 	case Colon:
-		return 9
+		return 10
 	case Exponentiation:
-		return 8
+		return 9
 	case Times, Divide, Remainder, And, LeftShift, RightShift:
-		return 7
+		return 8
 	case Plus, Minus, Or, Caret:
-		return 6
+		return 7
 	case LogicalEquals, NotEquals, LessThan, GreaterThan, LessThanEquals, GreaterThanEquals:
-		return 5
+		return 6
 	case LogicalAnd:
-		return 4
+		return 5
 	case LogicalOr:
-		return 3
+		return 4
 	case DotDot:
+		return 3
+	case Pipe, QuestionPipe:
 		return 2
 	case Assign, LeftArrow:
 		return 1
@@ -300,7 +287,7 @@ func (t Token) Prec() int {
 
 func (t Token) IsLeftAssoc() bool {
 	switch t.Type {
-	case Times, Divide, Remainder, And, LeftShift, RightShift, Plus, Minus, Or, Caret, LogicalEquals, NotEquals, LessThan, GreaterThan, LessThanEquals, GreaterThanEquals, LogicalAnd, LogicalOr, Colon:
+	case Times, Divide, Remainder, And, LeftShift, RightShift, Plus, Minus, Or, Caret, LogicalEquals, NotEquals, LessThan, GreaterThan, LessThanEquals, GreaterThanEquals, LogicalAnd, LogicalOr, Colon, Pipe, QuestionPipe, DotDot:
 		return true
 	}
 	return false
