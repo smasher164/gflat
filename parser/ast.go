@@ -109,6 +109,7 @@ func (be BinaryExpr) LeadingTrivia() []lexer.Token {
 }
 
 type File struct {
+	Filename       string
 	Package        lexer.Token
 	PackageName    Node
 	Body           Node
@@ -148,7 +149,8 @@ func (s Stmt) Span() lexer.Span {
 func (f File) ASTString(depth int) string {
 	if f.Package.Type == lexer.Package {
 		return fmt.Sprintf(
-			"File\n%sPackage: %s\n%sPackageName: %s\n%sBody: %s\n%sTrailingTrivia: %v\n%sImports: %v",
+			"File\n%sFilename: %s\n%sPackage: %s\n%sPackageName: %s\n%sBody: %s\n%sTrailingTrivia: %v\n%sImports: %v",
+			indent(depth+1), f.Filename,
 			indent(depth+1),
 			f.Package, indent(depth+1),
 			f.PackageName.ASTString(depth+1), indent(depth+1),
@@ -157,7 +159,8 @@ func (f File) ASTString(depth int) string {
 			f.Imports)
 	}
 	return fmt.Sprintf(
-		"File\n%sBody: %s\n%sTrailingTrivia: %v\n%sImports: %v",
+		"File\n%sFilename: %s\n%sBody: %s\n%sTrailingTrivia: %v\n%sImports: %v",
+		indent(depth+1), f.Filename,
 		indent(depth+1),
 		f.Body.ASTString(depth+1), indent(depth+1),
 		f.trailingTrivia, indent(depth+1),

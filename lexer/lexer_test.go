@@ -4,10 +4,10 @@ import (
 	"fmt"
 	"strings"
 	"testing"
-	"testing/fstest"
 	"unicode/utf8"
 
 	"github.com/kr/pretty"
+	"github.com/smasher164/gflat/fstest"
 	. "github.com/smasher164/gflat/lexer"
 	"golang.org/x/exp/slices"
 )
@@ -61,12 +61,9 @@ func unitSpan(pos Pos) Span {
 }
 
 func TestLexer(t *testing.T) {
-	testfs := fstest.MapFS{}
 	run := func(name, data string, expected []Token) {
 		t.Run(name, func(t *testing.T) {
-			testfs[name] = &fstest.MapFile{
-				Data: []byte(data),
-			}
+			testfs := fstest.MapFS().Add(name, data)
 			l, err := NewLexer(testfs, name)
 			if err != nil {
 				t.Error(err)

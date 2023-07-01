@@ -72,6 +72,7 @@ func ParsePackage(fsys fs.FS, scriptFile string, filenames ...string) (Node, err
 			}
 		} else {
 			if file, ok := file.(File); ok {
+				file.Filename = filename
 				if file.Package.Type == lexer.Package {
 					pkg.PackageFiles = append(pkg.PackageFiles, file)
 					if name, ok := file.PackageName.(Ident); ok {
