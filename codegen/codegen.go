@@ -65,7 +65,7 @@ func (c *Codegen) Codegen(outfs fs.FS, n parser.Node) {
 		}
 	case parser.File:
 		// check that it's a script file for now
-		if n.Package.Type == lexer.Package {
+		if n.Package.Type != lexer.Package {
 			// generate a file with the same name as the script file
 			// with a "go:build ignore" comment
 			// and the contents of the script file
