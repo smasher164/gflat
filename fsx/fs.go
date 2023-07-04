@@ -5,79 +5,12 @@ import (
 	"io"
 	"io/fs"
 	"os"
-	"reflect"
 	"strings"
-	"testing/fstest"
 	"time"
 	_ "unsafe"
 
 	"golang.org/x/exp/slices"
 )
-
-type mapFileInfo struct {
-	name string
-	f    *fstest.MapFile
-}
-
-type openMapFile struct {
-	path string
-	mapFileInfo
-	offset int64
-}
-
-type mapFile struct {
-	f *fstest.MapFile
-	fs.File
-}
-
-func (mf mapFile) Write(p []byte) (n int, err error) {
-	mf.f.Data = append(mf.f.Data, p...)
-	return len(p), nil
-}
-
-type mapFS struct {
-	fstest.MapFS
-}
-
-func MapFS() mapFS {
-	return mapFS{fstest.MapFS{}}
-}
-
-func (mfs mapFS) AddDir(name string) mapFS {
-	mfs.MapFS[name] = &fstest.MapFile{
-		Mode: fs.ModeDir,
-	}
-	return mfs
-	// dir, err := fs.Sub(mfs, name)
-	// if err != nil {
-	// 	panic("could not open directory just created")
-	// }
-	// return dir
-}
-
-func (mfs mapFS) Add(name, body string) mapFS {
-	mfs.MapFS[name] = &fstest.MapFile{
-		Data: []byte(body),
-	}
-	return mfs
-}
-
-func (mfs mapFS) Create(name string) (WriteableFile, error) {
-	if _, ok := mfs.MapFS[name]; ok {
-		return nil, &fs.PathError{Op: "create", Path: name, Err: fs.ErrExist}
-	}
-	f := &fstest.MapFile{}
-	mfs.MapFS[name] = f
-	of, err := mfs.Open(name)
-	if err != nil {
-		return nil, err
-	}
-	u := reflect.ValueOf(of).UnsafePointer()
-	o := (*openMapFile)(u)
-	return mapFile{o.f, of}, nil
-}
-
-// ------------------------------------------------------------
 
 var _ fs.File = (*treeFS)(nil)
 var _ fs.DirEntry = (*treeFS)(nil)
