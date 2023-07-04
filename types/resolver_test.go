@@ -3,17 +3,18 @@ package types_test
 import (
 	"testing"
 
-	"github.com/smasher164/gflat/fstest"
+	"github.com/smasher164/gflat/fsx"
 	"github.com/smasher164/gflat/parser"
 	"github.com/smasher164/gflat/types"
 )
 
 func TestInferExpression(t *testing.T) {
-	fsys := fstest.MapFS().
-		Add("a/test.gf", `
-			let s = "s"
-			s+s
-		`)
+	fsys := fsx.TestFS([][2]string{
+		{"a/test.gf", `
+		let s = "s"
+		s+s
+	`},
+	})
 	importer := parser.NewImporter(fsys)
 	if err := importer.ImportCrawl("a", "test.gf"); err != nil {
 		t.Fatal(err)
@@ -26,9 +27,11 @@ func TestInferExpression(t *testing.T) {
 }
 
 func Test(t *testing.T) {
-	fsys := fstest.MapFS().Add("a/test.gf", `
-	fun foo x => x
-	`)
+	fsys := fsx.TestFS([][2]string{
+		{"a/test.gf", `
+		fun foo x => x
+		`},
+	})
 	importer := parser.NewImporter(fsys)
 	if err := importer.ImportCrawl("a", "test.gf"); err != nil {
 		t.Fatal(err)

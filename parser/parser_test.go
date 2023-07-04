@@ -3,25 +3,26 @@ package parser_test
 import (
 	"testing"
 
-	"github.com/smasher164/gflat/fstest"
+	"github.com/smasher164/gflat/fsx"
 	"github.com/smasher164/gflat/parser"
 )
 
 func TestPackage(t *testing.T) {
-	fsys := fstest.MapFS().
-		Add("a.gf", `
+	fsys := fsx.TestFS([][2]string{
+		{"a.gf", `
 		package a
 
 		fun f(x) => x
-		`).
-		Add("b.gf", `
+		`},
+		{"b.gf", `
 		package a
 
 		fun f(x) => x
-		`).
-		Add("c.gf", `
+		`},
+		{"c.gf", `
 		print "Hello, World!"
-		`)
+		`},
+	})
 	pkg, err := parser.ParsePackage(fsys, "a.gf", "b.gf", "c.gf")
 	if err != nil {
 		t.Fatal(err)
@@ -30,9 +31,9 @@ func TestPackage(t *testing.T) {
 }
 
 func TestFile(t *testing.T) {
-	fsys := fstest.MapFS().Add("test.gf", `
+	fsys := fsx.TestFS([][2]string{{"test.gf", `
 	open file ?> ctx $"could not open {file}" |> readFile
-	`)
+	`}})
 	// fsys := fstest.MapFS{
 	// 	"test.gf": &fstest.MapFile{
 	// Data: []byte(`;`),

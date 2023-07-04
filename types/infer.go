@@ -7,11 +7,6 @@ import (
 	"github.com/smasher164/gflat/parser"
 )
 
-// type TypedNode interface {
-// 	parser.Node
-// 	Type() Type
-// }
-
 type TypedNode struct {
 	parser.Node
 	Type Type

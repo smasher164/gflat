@@ -19,18 +19,16 @@ package/subpackage -> package/subpackage
 type Codegen struct {
 	// assumes we have a resolved and typed build
 	importer *parser.Importer
-	out      fs.FS
 }
 
-func NewCodegen(importer *parser.Importer, outfs fs.FS) *Codegen {
+func NewCodegen(importer *parser.Importer) *Codegen {
 	return &Codegen{
 		importer: importer,
-		out:      outfs,
 	}
 }
 
 // TODO: key the build by hash of inputs (basic incremental compilation)
-func (c *Codegen) CodegenBuild() {
+func (c *Codegen) CodegenBuild(outfs fs.FS) {
 	for _, path := range c.importer.Sorted {
 		path := path
 		pkg := c.importer.PkgCache[path].(types.ResolvedPackage)
@@ -40,11 +38,12 @@ func (c *Codegen) CodegenBuild() {
 	}
 }
 
-func (c *Codegen) Codegen(n parser.Node) {
+func (c *Codegen) Codegen(outfs fs.FS, n parser.Node) {
 	switch n := n.(type) {
 	case types.ResolvedPackage:
 		pkg := n.OriginalPackage.(parser.Package)
 		for _, script := range pkg.ScriptFiles {
+
 			c.Codegen(script) // just script files for now
 		}
 	case parser.File:

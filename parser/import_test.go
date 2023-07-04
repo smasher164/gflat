@@ -10,29 +10,32 @@ import (
 
 func TestImport(t *testing.T) {
 	fsys := fstest.MapFS{
-		"a/a.gf": &fstest.MapFile{
+		"a/a1/a.gf": &fstest.MapFile{
 			Data: []byte(`
-			package a
+			package a1
 
-			import "c"
-			import "b"
+			import "a/a3"
+			import "a/a2"
 			`),
 		},
-		"b/b.gf": &fstest.MapFile{
+		"a/a2/b.gf": &fstest.MapFile{
 			Data: []byte(`
-			package b
+			package a2
 
-			import "c"
+			import "a/a3"
 			`),
 		},
-		"c/c.gf": &fstest.MapFile{
+		"a/a3/c.gf": &fstest.MapFile{
 			Data: []byte(`
-			package c
+			package a3
 
 			fun Foo() => 1
 			`),
 		},
 	}
 	importer := parser.NewImporter(fsys)
-	fmt.Println(importer.ImportCrawl("a", ""))
+	if err := importer.ImportCrawl("a/a1", ""); err != nil {
+		t.Fatal(err)
+	}
+	fmt.Println(importer.PkgCache["a/a1"].ASTString(0))
 }
