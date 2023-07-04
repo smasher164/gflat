@@ -30,9 +30,7 @@ func TestWrite(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if wf, ok := f.(WriteableFile); ok {
-		if _, err := wf.Write([]byte("hello world")); err != nil {
-			t.Fatal(err)
-		}
+	if _, err := f.Write([]byte("hello world")); err != nil {
+		t.Fatal(err)
 	}
 }
