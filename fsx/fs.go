@@ -248,7 +248,7 @@ func newTreeFS(name string, perm fs.FileMode) *treeFS {
 }
 
 // Create implements CreateFS
-func (tfs *treeFS) Create(name string) (fs.File, error) {
+func (tfs *treeFS) Create(name string) (WriteableFile, error) {
 	i := slices.IndexFunc(tfs.entries, func(f fs.File) bool {
 		return nameOf(f) == name
 	})
@@ -313,10 +313,10 @@ type WriteableFile interface {
 
 type CreateFS interface {
 	fs.FS
-	Create(name string) (fs.File, error)
+	Create(name string) (WriteableFile, error)
 }
 
-func Create(fsys fs.FS, name string) (fs.File, error) {
+func Create(fsys fs.FS, name string) (WriteableFile, error) {
 	if cfs, ok := fsys.(CreateFS); ok {
 		return cfs.Create(name)
 	}
@@ -351,7 +351,7 @@ func (dir DirFS) Mkdir(name string, perm fs.FileMode) (fs.FS, error) {
 }
 
 // Create implements CreateFS
-func (dir DirFS) Create(name string) (fs.File, error) {
+func (dir DirFS) Create(name string) (WriteableFile, error) {
 	fullname, err := dir.join(name)
 	if err != nil {
 		return nil, &os.PathError{Op: "create", Path: name, Err: err}
