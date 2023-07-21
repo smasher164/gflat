@@ -17,25 +17,52 @@ var (
 	_ parser.Node = Cons{}
 	_ parser.Node = ResolvedTypeArg{}
 	_ parser.Node = UnresolvedTypeArg{}
+	_ parser.Node = TypedNode{}
+	// _ parser.Node = ResolvedNode{}
 )
+
+type TypedNode struct {
+	parser.Node
+	Type Type
+}
+
+func indent(depth int) string {
+	return fmt.Sprintf("%*s", depth*2, "")
+}
+
+func (t TypedNode) ASTString(depth int) string {
+	// prints the underlying node along with its type.
+	return fmt.Sprintf("TypedNode\n%sNode: %s\n%sType: %s", indent(depth+1), t.Node.ASTString(depth+1), indent(depth+1), t.Type)
+}
+
+/*
+type SomeNode interface {
+	parser.Node
+	Type() Type
+	Env() *Env
+	Underlying() parser.Node
+}
+
+type ResolvedNode interface {
+	parser.Node
+	Type() Type
+	Env() *Env
+	Underlying() parser.Node
+}
+*/
+
+type ResolvedNode interface {
+	parser.Node
+	Env() *Env
+}
 
 // Var is a variable Node that points into a Scope object.
 type Var struct {
-	OriginalIdent parser.Node
-	// Reference to environment here.
-	Env *Env
+	parser.Ident
 }
 
 func (v Var) ASTString(depth int) string {
-	return fmt.Sprintf("Var: %s", v.OriginalIdent.ASTString(depth))
-}
-
-func (v Var) LeadingTrivia() []lexer.Token {
-	return v.OriginalIdent.LeadingTrivia()
-}
-
-func (v Var) Span() lexer.Span {
-	return v.OriginalIdent.Span()
+	return fmt.Sprintf("Var: %s", v.Ident.ASTString(depth))
 }
 
 // type FieldName struct {
@@ -57,58 +84,28 @@ func (v Var) Span() lexer.Span {
 // }
 
 type TypeName struct {
-	OriginalIdent parser.Node
-	// Reference to environment here.
-	Env *Env
+	parser.Ident
 }
 
 func (v TypeName) ASTString(depth int) string {
-	return fmt.Sprintf("TypeName: %s", v.OriginalIdent.ASTString(depth))
-}
-
-func (v TypeName) LeadingTrivia() []lexer.Token {
-	return v.OriginalIdent.LeadingTrivia()
-}
-
-func (v TypeName) Span() lexer.Span {
-	return v.OriginalIdent.Span()
+	return fmt.Sprintf("TypeName: %s", v.Ident.ASTString(depth))
 }
 
 // UnresolvedIdent is an identifier that has not been resolved yet.
 type UnresolvedIdent struct {
-	OriginalIdent parser.Node
-	// Reference to environment here.
-	Env *Env
+	parser.Ident
 }
 
 func (v UnresolvedIdent) ASTString(depth int) string {
-	return fmt.Sprintf("UnknownIdent: %s", v.OriginalIdent.ASTString(depth))
-}
-
-func (v UnresolvedIdent) LeadingTrivia() []lexer.Token {
-	return v.OriginalIdent.LeadingTrivia()
-}
-
-func (v UnresolvedIdent) Span() lexer.Span {
-	return v.OriginalIdent.Span()
+	return fmt.Sprintf("UnresolvedIdent: %s", v.Ident.ASTString(depth))
 }
 
 type PackageName struct {
-	OriginalIdent parser.Node
-	// Reference to environment here.
-	Env *Env
+	parser.Ident
 }
 
 func (v PackageName) ASTString(depth int) string {
-	return fmt.Sprintf("PackageName: %s", v.OriginalIdent.ASTString(depth))
-}
-
-func (v PackageName) LeadingTrivia() []lexer.Token {
-	return v.OriginalIdent.LeadingTrivia()
-}
-
-func (v PackageName) Span() lexer.Span {
-	return v.OriginalIdent.Span()
+	return fmt.Sprintf("PackageName: %s", v.Ident.ASTString(depth))
 }
 
 type ResolvedPackage struct {
@@ -133,21 +130,11 @@ func (v ResolvedPackage) Span() lexer.Span {
 
 // Cons is a constructor Node that points into a Scope object.
 type Cons struct {
-	OriginalIdent parser.Node
-	// Reference to environment here.
-	Env *Env
+	parser.Ident
 }
 
 func (c Cons) ASTString(depth int) string {
-	return fmt.Sprintf("Cons: %s", c.OriginalIdent.ASTString(depth))
-}
-
-func (c Cons) LeadingTrivia() []lexer.Token {
-	return c.OriginalIdent.LeadingTrivia()
-}
-
-func (c Cons) Span() lexer.Span {
-	return c.OriginalIdent.Span()
+	return fmt.Sprintf("Cons: %s", c.Ident.ASTString(depth))
 }
 
 type ResolvedTypeArg struct {
@@ -186,20 +173,20 @@ func (v UnresolvedTypeArg) Span() lexer.Span {
 	return v.OriginalTypeVar.Span()
 }
 
-func getID(n parser.Node) string {
-	switch n := n.(type) {
-	case parser.Ident:
-		return n.Name.Data
-	case Var:
-		return getID(n.OriginalIdent)
-	case TypeName:
-		return getID(n.OriginalIdent)
-	case Cons:
-		return getID(n.OriginalIdent)
-	case PackageName:
-		return getID(n.OriginalIdent)
-	case UnresolvedIdent:
-		return getID(n.OriginalIdent)
-	}
-	panic("unreachable")
-}
+// func getID(n parser.Node) string {
+// 	switch n := n.(type) {
+// 	case parser.Ident:
+// 		return n.Name.Data
+// 	case Var:
+// 		return getID(n.OriginalIdent)
+// 	case TypeName:
+// 		return getID(n.OriginalIdent)
+// 	case Cons:
+// 		return getID(n.OriginalIdent)
+// 	case PackageName:
+// 		return getID(n.OriginalIdent)
+// 	case UnresolvedIdent:
+// 		return getID(n.OriginalIdent)
+// 	}
+// 	panic("unreachable")
+// }

@@ -1,4 +1,4 @@
-package parser
+package ast
 
 import (
 	"fmt"
@@ -15,49 +15,49 @@ type Node interface {
 }
 
 var (
-	_ Node = BinaryExpr{}
-	_ Node = Stmt{}
-	_ Node = File{}
-	_ Node = Ident{}
-	_ Node = Illegal{}
-	_ Node = Block{}
-	_ Node = EmptyExpr{}
-	_ Node = TypeAnnotation{}
-	_ Node = FunctionSignature{}
-	_ Node = Arrow{}
-	_ Node = LetFunction{}
-	_ Node = Function{}
-	_ Node = CommaElement{}
-	_ Node = Tuple{}
-	_ Node = LetDecl{}
-	_ Node = VarDecl{}
-	_ Node = IfHeader{}
-	_ Node = If{}
-	_ Node = IfElse{}
-	_ Node = TypeDecl{}
-	_ Node = Number{}
-	_ Node = Array{}
-	_ Node = TypeArg{}
-	_ Node = SumType{}
-	_ Node = SumTypeElement{}
-	_ Node = ForallType{}
-	_ Node = FunctionType{}
-	_ Node = Field{}
-	_ Node = PrefixExpr{}
-	_ Node = CallExpr{}
-	_ Node = PostfixExpr{}
-	_ Node = SelectorExpr{}
-	_ Node = PatternCase{}
-	_ Node = IfMatch{}
-	_ Node = BasicString{}
-	_ Node = InterpolatedString{}
-	_ Node = IndexExpr{}
-	_ Node = ImportDecl{}
-	_ Node = ImportDeclPackage{}
-	_ Node = ImplDecl{}
-	_ Node = ArrayType{}
-	_ Node = NillableType{}
-	_ Node = Package{}
+	_ Node = (*BinaryExpr)(nil)
+	_ Node = (*Stmt)(nil)
+	_ Node = (*File)(nil)
+	_ Node = (*Ident)(nil)
+	_ Node = (*Illegal)(nil)
+	_ Node = (*Block)(nil)
+	_ Node = (*EmptyExpr)(nil)
+	_ Node = (*TypeAnnotation)(nil)
+	_ Node = (*FunctionSignature)(nil)
+	_ Node = (*Arrow)(nil)
+	_ Node = (*LetFunction)(nil)
+	_ Node = (*Function)(nil)
+	_ Node = (*CommaElement)(nil)
+	_ Node = (*Tuple)(nil)
+	_ Node = (*LetDecl)(nil)
+	_ Node = (*VarDecl)(nil)
+	_ Node = (*IfHeader)(nil)
+	_ Node = (*If)(nil)
+	_ Node = (*IfElse)(nil)
+	_ Node = (*TypeDecl)(nil)
+	_ Node = (*Number)(nil)
+	_ Node = (*Array)(nil)
+	_ Node = (*TypeArg)(nil)
+	_ Node = (*SumType)(nil)
+	_ Node = (*SumTypeElement)(nil)
+	_ Node = (*ForallType)(nil)
+	_ Node = (*FunctionType)(nil)
+	_ Node = (*Field)(nil)
+	_ Node = (*PrefixExpr)(nil)
+	_ Node = (*CallExpr)(nil)
+	_ Node = (*PostfixExpr)(nil)
+	_ Node = (*SelectorExpr)(nil)
+	_ Node = (*PatternCase)(nil)
+	_ Node = (*IfMatch)(nil)
+	_ Node = (*BasicString)(nil)
+	_ Node = (*InterpolatedString)(nil)
+	_ Node = (*IndexExpr)(nil)
+	_ Node = (*ImportDecl)(nil)
+	_ Node = (*ImportDeclPackage)(nil)
+	_ Node = (*ImplDecl)(nil)
+	_ Node = (*ArrayType)(nil)
+	_ Node = (*NillableType)(nil)
+	_ Node = (*Package)(nil)
 )
 
 func spanOf(n any) lexer.Span {
@@ -91,7 +91,7 @@ type BinaryExpr struct {
 	Right Node
 }
 
-func (be BinaryExpr) ASTString(depth int) string {
+func (be *BinaryExpr) ASTString(depth int) string {
 	return fmt.Sprintf(
 		"BinaryExpr\n%sLeft: %s\n%sOp: %s\n%sRight: %s",
 		indent(depth+1),
@@ -100,21 +100,25 @@ func (be BinaryExpr) ASTString(depth int) string {
 		be.Right.ASTString(depth+1))
 }
 
-func (be BinaryExpr) Span() lexer.Span {
+func (be *BinaryExpr) Span() lexer.Span {
 	return spanOf(be.Left).Add(spanOf(be.Right))
 }
 
-func (be BinaryExpr) LeadingTrivia() []lexer.Token {
+func (be *BinaryExpr) LeadingTrivia() []lexer.Token {
 	return leadingTriviaOf(be.Left)
 }
 
 type File struct {
 	Filename       string
 	Package        lexer.Token
-	PackageName    Node
-	Body           Node
+	PackageName    *Ident
+	Body           *Block
 	trailingTrivia []lexer.Token
 	Imports        map[string]struct{}
+}
+
+func (f *File) SetTrailingTrivia(tt []lexer.Token) {
+	f.trailingTrivia = tt
 }
 
 func indent(depth int) string {
@@ -122,31 +126,31 @@ func indent(depth int) string {
 }
 
 type Stmt struct {
-	Stmt      Node
-	Semicolon lexer.Token
+	Stmt       Node
+	Terminator lexer.Token
 }
 
-func (s Stmt) ASTString(depth int) string {
+func (s *Stmt) ASTString(depth int) string {
 	return fmt.Sprintf(
-		"Stmt\n%s%s\n%sSemicolon: %s",
+		"Stmt\n%s%s\n%sTerminator: %s",
 		indent(depth+1),
 		s.Stmt.ASTString(depth+1), indent(depth+1),
-		s.Semicolon)
+		s.Terminator)
 }
 
-func (s Stmt) LeadingTrivia() []lexer.Token {
+func (s *Stmt) LeadingTrivia() []lexer.Token {
 	if trivia := leadingTriviaOf(s.Stmt); trivia != nil {
 		return trivia
 	} else {
-		return s.Semicolon.LeadingTrivia
+		return s.Terminator.LeadingTrivia
 	}
 }
 
-func (s Stmt) Span() lexer.Span {
-	return spanOf(s.Stmt).Add(s.Semicolon.Span)
+func (s *Stmt) Span() lexer.Span {
+	return spanOf(s.Stmt).Add(s.Terminator.Span)
 }
 
-func (f File) ASTString(depth int) string {
+func (f *File) ASTString(depth int) string {
 	if f.Package.Type == lexer.Package {
 		return fmt.Sprintf(
 			"File\n%sFilename: %s\n%sPackage: %s\n%sPackageName: %s\n%sBody: %s\n%sTrailingTrivia: %v\n%sImports: %v",
@@ -167,43 +171,50 @@ func (f File) ASTString(depth int) string {
 		f.Imports)
 }
 
-func (f File) LeadingTrivia() []lexer.Token {
+func (f *File) LeadingTrivia() []lexer.Token {
 	if f.Package.Type == lexer.Package {
 		return f.Package.LeadingTrivia
 	}
 	return leadingTriviaOf(f.Body)
 }
 
-func (f File) Span() lexer.Span {
+func (f *File) Span() lexer.Span {
 	return spanOf(f.Package).Add(spanOf(f.Body))
 }
 
-func (f File) TrailingTrivia() []lexer.Token {
+func (f *File) TrailingTrivia() []lexer.Token {
 	return f.trailingTrivia
 }
 
 type Package struct {
 	Name         string
-	PackageFiles []Node
-	ScriptFiles  []Node
+	PackageFiles []*File
+	ScriptFile   *File
 	Imports      map[string]struct{}
 }
 
-func (p Package) ASTString(depth int) string {
+func (p *Package) ASTString(depth int) string {
+	if p.ScriptFile == nil {
+		return fmt.Sprintf("Package\n%sName: %s\n%sPackageFiles: %s\n%sImports: %v",
+			indent(depth+1),
+			p.Name, indent(depth+1),
+			printFileSlice(depth+1, p.PackageFiles), indent(depth+1),
+			p.Imports)
+	}
 	return fmt.Sprintf(
-		"Package\n%sName: %s\n%sPackageFiles: %s\n%sScriptFiles: %s\n%sImports: %v",
+		"Package\n%sName: %s\n%sPackageFiles: %s\n%sScriptFile: %s\n%sImports: %v",
 		indent(depth+1),
 		p.Name, indent(depth+1),
-		printNodeSlice(depth+1, p.PackageFiles), indent(depth+1),
-		printNodeSlice(depth+1, p.ScriptFiles), indent(depth+1),
+		printFileSlice(depth+1, p.PackageFiles), indent(depth+1),
+		p.ScriptFile.ASTString(depth+1), indent(depth+1),
 		p.Imports)
 }
 
-func (p Package) LeadingTrivia() []lexer.Token {
+func (p *Package) LeadingTrivia() []lexer.Token {
 	return nil
 }
 
-func (p Package) Span() lexer.Span {
+func (p *Package) Span() lexer.Span {
 	return lexer.Span{}
 }
 
@@ -211,15 +222,15 @@ type Ident struct {
 	Name lexer.Token
 }
 
-func (id Ident) ASTString(depth int) string {
+func (id *Ident) ASTString(depth int) string {
 	return id.Name.String()
 }
 
-func (id Ident) LeadingTrivia() []lexer.Token {
+func (id *Ident) LeadingTrivia() []lexer.Token {
 	return id.Name.LeadingTrivia
 }
 
-func (id Ident) Span() lexer.Span {
+func (id *Ident) Span() lexer.Span {
 	return id.Name.Span
 }
 
@@ -230,7 +241,15 @@ type Illegal struct {
 	Msg           string
 }
 
-func (i Illegal) ASTString(depth int) string {
+func (ill *Illegal) SetLeadingTrivia(tt []lexer.Token) {
+	ill.leadingTrivia = tt
+}
+
+func (ill *Illegal) SetSpan(span lexer.Span) {
+	ill.span = span
+}
+
+func (i *Illegal) ASTString(depth int) string {
 	if i.Node != nil {
 		return fmt.Sprintf(
 			"Illegal\n%sleadingTrivia: %v\n%sspan: %s\n%sNode: %s\n%sMsg: %q",
@@ -248,14 +267,14 @@ func (i Illegal) ASTString(depth int) string {
 		i.Msg)
 }
 
-func (i Illegal) LeadingTrivia() []lexer.Token {
+func (i *Illegal) LeadingTrivia() []lexer.Token {
 	if len(i.leadingTrivia) > 0 {
 		return i.leadingTrivia
 	}
 	return leadingTriviaOf(i.Node)
 }
 
-func (i Illegal) Span() lexer.Span {
+func (i *Illegal) Span() lexer.Span {
 	return i.span.Add(spanOf(i.Node))
 }
 
@@ -277,7 +296,19 @@ func printNodeSlice(depth int, nodes []Node) string {
 	return s
 }
 
-func (b Block) ASTString(depth int) string {
+func printFileSlice(depth int, nodes []*File) string {
+	if len(nodes) == 0 {
+		return "[]"
+	}
+	s := fmt.Sprintf("[\n%s", indent(depth+1))
+	for _, n := range nodes {
+		s += fmt.Sprintf("%s\n%s", n.ASTString(depth+1), indent(depth+1))
+	}
+	s += "]"
+	return s
+}
+
+func (b *Block) ASTString(depth int) string {
 	return fmt.Sprintf(
 		"Block\n%sLeftBrace: %s\n%sBody: %s\n%sRightBrace: %s",
 		indent(depth+1),
@@ -286,7 +317,7 @@ func (b Block) ASTString(depth int) string {
 		b.RightBrace)
 }
 
-func (b Block) LeadingTrivia() []lexer.Token {
+func (b *Block) LeadingTrivia() []lexer.Token {
 	if b.LeftBrace.Type == lexer.LeftBrace {
 		return b.LeftBrace.LeadingTrivia
 	}
@@ -296,7 +327,7 @@ func (b Block) LeadingTrivia() []lexer.Token {
 	return b.RightBrace.LeadingTrivia
 }
 
-func (b Block) Span() lexer.Span {
+func (b *Block) Span() lexer.Span {
 	return b.LeftBrace.Span.Add(spanOf(b.Body)).Add(b.RightBrace.Span)
 }
 
@@ -306,15 +337,15 @@ func PrintAST(root Node) {
 
 type EmptyExpr struct{}
 
-func (e EmptyExpr) ASTString(_ int) string {
+func (e *EmptyExpr) ASTString(_ int) string {
 	return "EmptyExpr"
 }
 
-func (e EmptyExpr) LeadingTrivia() []lexer.Token {
+func (e *EmptyExpr) LeadingTrivia() []lexer.Token {
 	return nil
 }
 
-func (e EmptyExpr) Span() lexer.Span {
+func (e *EmptyExpr) Span() lexer.Span {
 	return lexer.Span{}
 }
 
@@ -324,7 +355,7 @@ type TypeAnnotation struct {
 	Type        Node
 }
 
-func (t TypeAnnotation) ASTString(depth int) string {
+func (t *TypeAnnotation) ASTString(depth int) string {
 	if t.Type == nil {
 		return fmt.Sprintf(
 			"TypeAnnotation\n%sDestructure: %s\n%sColon: %s",
@@ -340,11 +371,11 @@ func (t TypeAnnotation) ASTString(depth int) string {
 		t.Type.ASTString(depth+1))
 }
 
-func (t TypeAnnotation) LeadingTrivia() []lexer.Token {
+func (t *TypeAnnotation) LeadingTrivia() []lexer.Token {
 	return leadingTriviaOf(t.Destructure)
 }
 
-func (t TypeAnnotation) Span() lexer.Span {
+func (t *TypeAnnotation) Span() lexer.Span {
 	return spanOf(t.Destructure).Add(t.Colon.Span).Add(spanOf(t.Type))
 }
 
@@ -355,15 +386,15 @@ type FunctionSignature struct {
 	Clause Node
 }
 
-func (n FunctionSignature) LeadingTrivia() []lexer.Token {
+func (n *FunctionSignature) LeadingTrivia() []lexer.Token {
 	return leadingTriviaOf(n.Param)
 }
 
-func (n FunctionSignature) Span() lexer.Span {
+func (n *FunctionSignature) Span() lexer.Span {
 	return spanOf(n.Param).Add(spanOf(n.Arrows)).Add(n.With.Span).Add(spanOf(n.Clause))
 }
 
-func (n FunctionSignature) ASTString(depth int) string {
+func (n *FunctionSignature) ASTString(depth int) string {
 	if n.With.Type == lexer.With {
 		return fmt.Sprintf(
 			"FunctionSignature\n%sParam: %s\n%sArrows: %s\n%sWith: %s\n%sClause: %s",
@@ -383,15 +414,15 @@ type Arrow struct {
 	Type  Node
 }
 
-func (n Arrow) LeadingTrivia() []lexer.Token {
+func (n *Arrow) LeadingTrivia() []lexer.Token {
 	return n.Arrow.LeadingTrivia
 }
 
-func (n Arrow) Span() lexer.Span {
+func (n *Arrow) Span() lexer.Span {
 	return n.Arrow.Span.Add(spanOf(n.Type))
 }
 
-func (n Arrow) ASTString(depth int) string {
+func (n *Arrow) ASTString(depth int) string {
 	return fmt.Sprintf(
 		"Arrow\n%sArrow: %s\n%sType: %s",
 		indent(depth+1),
@@ -402,30 +433,28 @@ func (n Arrow) ASTString(depth int) string {
 type LetFunction struct {
 	Let        lexer.Token
 	TypeParams []Node
-	Name       Node
-	Signature  Node
+	Name       *Ident
+	Signature  *FunctionSignature
 	Equals     lexer.Token
 	Body       Node
 }
 
-func (f LetFunction) LeadingTrivia() []lexer.Token {
+func (f *LetFunction) LeadingTrivia() []lexer.Token {
 	return f.Let.LeadingTrivia
 }
 
-func (f LetFunction) Span() lexer.Span {
+func (f *LetFunction) Span() lexer.Span {
 	return f.Let.Span.Add(spanOf(f.Signature)).Add(spanOf(f.Body))
 }
 
-func (f LetFunction) ASTString(depth int) string {
-	// optional fields: TypeParams, Name, Body
+func (f *LetFunction) ASTString(depth int) string {
+	// optional fields: TypeParams, Body
 	buf := new(strings.Builder)
 	buf.WriteString(fmt.Sprintf("LetFunction\n%sLet: %s\n", indent(depth+1), f.Let))
 	if len(f.TypeParams) > 0 {
 		buf.WriteString(fmt.Sprintf("%sTypeParams: %s\n", indent(depth+1), printNodeSlice(depth+1, f.TypeParams)))
 	}
-	if f.Name != nil {
-		buf.WriteString(fmt.Sprintf("%sName: %s\n", indent(depth+1), f.Name.ASTString(depth+1)))
-	}
+	buf.WriteString(fmt.Sprintf("%sName: %s\n", indent(depth+1), f.Name.ASTString(depth+1)))
 	buf.WriteString(fmt.Sprintf("%sSignature: %s\n", indent(depth+1), f.Signature.ASTString(depth+1)))
 	if f.Body != nil {
 		buf.WriteString(fmt.Sprintf("%sEquals: %s\n%sBody: %s", indent(depth+1), f.Equals, indent(depth+1), f.Body.ASTString(depth+1)))
@@ -442,15 +471,15 @@ type Function struct {
 	Body       Node
 }
 
-func (f Function) LeadingTrivia() []lexer.Token {
+func (f *Function) LeadingTrivia() []lexer.Token {
 	return f.Fun.LeadingTrivia
 }
 
-func (f Function) Span() lexer.Span {
+func (f *Function) Span() lexer.Span {
 	return f.Fun.Span.Add(spanOf(f.Signature)).Add(spanOf(f.Body))
 }
 
-func (f Function) ASTString(depth int) string {
+func (f *Function) ASTString(depth int) string {
 	// optional fields: TypeParams, Name, Body
 	buf := new(strings.Builder)
 	buf.WriteString(fmt.Sprintf("Function\n%sFun: %s\n", indent(depth+1), f.Fun))
@@ -472,7 +501,7 @@ type CommaElement struct {
 	Comma lexer.Token
 }
 
-func (t CommaElement) ASTString(depth int) string {
+func (t *CommaElement) ASTString(depth int) string {
 	return fmt.Sprintf(
 		"CommaElement\n%sX: %s\n%sComma: %s",
 		indent(depth+1),
@@ -480,11 +509,11 @@ func (t CommaElement) ASTString(depth int) string {
 		t.Comma)
 }
 
-func (t CommaElement) LeadingTrivia() []lexer.Token {
+func (t *CommaElement) LeadingTrivia() []lexer.Token {
 	return leadingTriviaOf(t.X)
 }
 
-func (t CommaElement) Span() lexer.Span {
+func (t *CommaElement) Span() lexer.Span {
 	return spanOf(t.X).Add(t.Comma.Span)
 }
 
@@ -494,15 +523,15 @@ type Array struct {
 	RightBracket lexer.Token
 }
 
-func (a Array) LeadingTrivia() []lexer.Token {
+func (a *Array) LeadingTrivia() []lexer.Token {
 	return a.LeftBracket.LeadingTrivia
 }
 
-func (a Array) Span() lexer.Span {
+func (a *Array) Span() lexer.Span {
 	return a.LeftBracket.Span.Add(a.RightBracket.Span)
 }
 
-func (a Array) ASTString(depth int) string {
+func (a *Array) ASTString(depth int) string {
 	return fmt.Sprintf(
 		"Array\n%sLeftBracket: %s\n%sElements: %s\n%sRightBracket: %s",
 		indent(depth+1),
@@ -517,15 +546,15 @@ type Tuple struct {
 	RightParen lexer.Token
 }
 
-func (t Tuple) LeadingTrivia() []lexer.Token {
+func (t *Tuple) LeadingTrivia() []lexer.Token {
 	return t.LeftParen.LeadingTrivia
 }
 
-func (t Tuple) Span() lexer.Span {
+func (t *Tuple) Span() lexer.Span {
 	return t.LeftParen.Span.Add(t.RightParen.Span)
 }
 
-func (t Tuple) ASTString(depth int) string {
+func (t *Tuple) ASTString(depth int) string {
 	return fmt.Sprintf(
 		"Tuple\n%sLeftParen: %s\n%sElements: %s\n%sRightParen: %s",
 		indent(depth+1),
@@ -541,15 +570,15 @@ type LetDecl struct {
 	Rhs         Node
 }
 
-func (l LetDecl) LeadingTrivia() []lexer.Token {
+func (l *LetDecl) LeadingTrivia() []lexer.Token {
 	return l.Let.LeadingTrivia
 }
 
-func (l LetDecl) Span() lexer.Span {
+func (l *LetDecl) Span() lexer.Span {
 	return l.Let.Span.Add(spanOf(l.Destructure)).Add(spanOf(l.Rhs))
 }
 
-func (l LetDecl) ASTString(depth int) string {
+func (l *LetDecl) ASTString(depth int) string {
 	if l.Equals.Type != lexer.Assign {
 		return fmt.Sprintf(
 			"LetDecl\n%sLet: %s\n%sDestructure: %s",
@@ -573,15 +602,15 @@ type VarDecl struct {
 	Rhs         Node
 }
 
-func (v VarDecl) LeadingTrivia() []lexer.Token {
+func (v *VarDecl) LeadingTrivia() []lexer.Token {
 	return v.Var.LeadingTrivia
 }
 
-func (v VarDecl) Span() lexer.Span {
+func (v *VarDecl) Span() lexer.Span {
 	return v.Var.Span.Add(spanOf(v.Rhs))
 }
 
-func (v VarDecl) ASTString(depth int) string {
+func (v *VarDecl) ASTString(depth int) string {
 	return fmt.Sprintf(
 		"VarDecl\n%sVar: %s\n%sDestructure: %s\n%sEquals: %s\n%sRhs: %s",
 		indent(depth+1),
@@ -596,15 +625,15 @@ type IfHeader struct {
 	Cond Node
 }
 
-func (i IfHeader) LeadingTrivia() []lexer.Token {
+func (i *IfHeader) LeadingTrivia() []lexer.Token {
 	return i.If.LeadingTrivia
 }
 
-func (i IfHeader) Span() lexer.Span {
+func (i *IfHeader) Span() lexer.Span {
 	return i.If.Span.Add(spanOf(i.Cond))
 }
 
-func (i IfHeader) ASTString(depth int) string {
+func (i *IfHeader) ASTString(depth int) string {
 	return fmt.Sprintf(
 		"IfHeader\n%sIf: %s\n%sCond: %s",
 		indent(depth+1),
@@ -617,15 +646,15 @@ type If struct {
 	Body     Node
 }
 
-func (i If) LeadingTrivia() []lexer.Token {
+func (i *If) LeadingTrivia() []lexer.Token {
 	return i.IfHeader.LeadingTrivia()
 }
 
-func (i If) Span() lexer.Span {
+func (i *If) Span() lexer.Span {
 	return i.IfHeader.Span().Add(spanOf(i.Body))
 }
 
-func (i If) ASTString(depth int) string {
+func (i *If) ASTString(depth int) string {
 	return fmt.Sprintf(
 		"If\n%sIfHeader: %s\n%sBody: %s",
 		indent(depth+1),
@@ -640,15 +669,15 @@ type IfElse struct {
 	ElseBody Node
 }
 
-func (i IfElse) LeadingTrivia() []lexer.Token {
+func (i *IfElse) LeadingTrivia() []lexer.Token {
 	return i.IfHeader.LeadingTrivia()
 }
 
-func (i IfElse) Span() lexer.Span {
+func (i *IfElse) Span() lexer.Span {
 	return i.IfHeader.Span().Add(spanOf(i.Body)).Add(i.Else.Span).Add(spanOf(i.ElseBody))
 }
 
-func (i IfElse) ASTString(depth int) string {
+func (i *IfElse) ASTString(depth int) string {
 	return fmt.Sprintf(
 		"IfElse\n%sIfHeader: %s\n%sBody: %s\n%sElse: %s\n%sElseBody: %s",
 		indent(depth+1),
@@ -660,7 +689,7 @@ func (i IfElse) ASTString(depth int) string {
 
 type TypeDecl struct {
 	Type       lexer.Token
-	Name       Node
+	Name       *Ident
 	TypeParams []Node
 	With       lexer.Token
 	Clause     Node
@@ -668,15 +697,15 @@ type TypeDecl struct {
 	Body       Node
 }
 
-func (t TypeDecl) LeadingTrivia() []lexer.Token {
+func (t *TypeDecl) LeadingTrivia() []lexer.Token {
 	return t.Type.LeadingTrivia
 }
 
-func (t TypeDecl) Span() lexer.Span {
+func (t *TypeDecl) Span() lexer.Span {
 	return t.Type.Span.Add(spanOf(t.TypeParams)).Add(spanOf(t.Clause)).Add(spanOf(t.Body))
 }
 
-func (t TypeDecl) ASTString(depth int) string {
+func (t *TypeDecl) ASTString(depth int) string {
 	// optional fields: TypeParams, Clause, Body
 	// none, 1, 1, 1, 2, 2, 2, 3
 	// i might try builder for this actually
@@ -699,21 +728,21 @@ type Number struct {
 }
 
 // IsNat reports whether the number literal is a composed of ascii digits only.
-func (n Number) IsNat() bool {
+func (n *Number) IsNat() bool {
 	return strings.IndexFunc(n.Lit.Data, func(r rune) bool {
 		return !unicode.IsDigit(r)
 	}) == -1
 }
 
-func (n Number) LeadingTrivia() []lexer.Token {
+func (n *Number) LeadingTrivia() []lexer.Token {
 	return n.Lit.LeadingTrivia
 }
 
-func (n Number) Span() lexer.Span {
+func (n *Number) Span() lexer.Span {
 	return n.Lit.Span
 }
 
-func (n Number) ASTString(depth int) string {
+func (n *Number) ASTString(depth int) string {
 	return fmt.Sprintf("Number %s", n.Lit)
 }
 
@@ -721,15 +750,15 @@ type TypeArg struct {
 	TypeArg lexer.Token
 }
 
-func (n TypeArg) LeadingTrivia() []lexer.Token {
+func (n *TypeArg) LeadingTrivia() []lexer.Token {
 	return n.TypeArg.LeadingTrivia
 }
 
-func (n TypeArg) Span() lexer.Span {
+func (n *TypeArg) Span() lexer.Span {
 	return n.TypeArg.Span
 }
 
-func (n TypeArg) ASTString(depth int) string {
+func (n *TypeArg) ASTString(depth int) string {
 	return n.TypeArg.String()
 }
 
@@ -737,18 +766,18 @@ type SumType struct {
 	Elements []Node
 }
 
-func (s SumType) LeadingTrivia() []lexer.Token {
+func (s *SumType) LeadingTrivia() []lexer.Token {
 	if len(s.Elements) == 0 {
 		return nil
 	}
 	return leadingTriviaOf(s.Elements[0])
 }
 
-func (s SumType) Span() lexer.Span {
+func (s *SumType) Span() lexer.Span {
 	return spanOf(s.Elements)
 }
 
-func (s SumType) ASTString(depth int) string {
+func (s *SumType) ASTString(depth int) string {
 	return fmt.Sprintf("SumType\n%sElements: %s", indent(depth+1), printNodeSlice(depth+1, s.Elements))
 }
 
@@ -758,15 +787,15 @@ type SumTypeElement struct {
 	Type Node
 }
 
-func (s SumTypeElement) LeadingTrivia() []lexer.Token {
+func (s *SumTypeElement) LeadingTrivia() []lexer.Token {
 	return s.Or.LeadingTrivia
 }
 
-func (s SumTypeElement) Span() lexer.Span {
+func (s *SumTypeElement) Span() lexer.Span {
 	return s.Or.Span.Add(spanOf(s.Name)).Add(spanOf(s.Type))
 }
 
-func (s SumTypeElement) ASTString(depth int) string {
+func (s *SumTypeElement) ASTString(depth int) string {
 	if s.Type == nil {
 		return fmt.Sprintf("SumTypeElement\n%sOr: %s\n%sName: %s", indent(depth+1), s.Or, indent(depth+1), s.Name.ASTString(depth+1))
 	}
@@ -779,15 +808,15 @@ type ForallType struct {
 	Type    Node
 }
 
-func (f ForallType) LeadingTrivia() []lexer.Token {
+func (f *ForallType) LeadingTrivia() []lexer.Token {
 	return f.TypeArg.LeadingTrivia()
 }
 
-func (f ForallType) Span() lexer.Span {
+func (f *ForallType) Span() lexer.Span {
 	return spanOf(f.TypeArg).Add(spanOf(f.Period)).Add(spanOf(f.Type))
 }
 
-func (f ForallType) ASTString(depth int) string {
+func (f *ForallType) ASTString(depth int) string {
 	return fmt.Sprintf("ForallType\n%sTypeArg: %s\n%sPeriod: %s\n%sType: %s", indent(depth+1), f.TypeArg.ASTString(depth+1), indent(depth+1), f.Period, indent(depth+1), f.Type.ASTString(depth+1))
 }
 
@@ -797,15 +826,15 @@ type FunctionType struct {
 	Arrows []Node
 }
 
-func (f FunctionType) LeadingTrivia() []lexer.Token {
+func (f *FunctionType) LeadingTrivia() []lexer.Token {
 	return f.Fun.LeadingTrivia
 }
 
-func (f FunctionType) Span() lexer.Span {
+func (f *FunctionType) Span() lexer.Span {
 	return f.Fun.Span.Add(spanOf(f.Param)).Add(spanOf(f.Arrows))
 }
 
-func (f FunctionType) ASTString(depth int) string {
+func (f *FunctionType) ASTString(depth int) string {
 	return fmt.Sprintf(
 		"FunctionType\n%sFun: %s\n%sParam: %s\n%sArrows: %s",
 		indent(depth+1), f.Fun, indent(depth+1), f.Param.ASTString(depth+1),
@@ -820,15 +849,15 @@ type Field struct {
 	Default Node
 }
 
-func (f Field) LeadingTrivia() []lexer.Token {
+func (f *Field) LeadingTrivia() []lexer.Token {
 	return leadingTriviaOf(f.Name)
 }
 
-func (f Field) Span() lexer.Span {
+func (f *Field) Span() lexer.Span {
 	return spanOf(f.Name).Add(spanOf(f.Type))
 }
 
-func (f Field) ASTString(depth int) string {
+func (f *Field) ASTString(depth int) string {
 	if f.Default != nil {
 		return fmt.Sprintf("Field\n%sName: %s\n%sColon: %s\n%sType: %s\n%sEquals: %s\n%sDefault: %s", indent(depth+1), f.Name.ASTString(depth+1), indent(depth+1), f.Colon, indent(depth+1), f.Type.ASTString(depth+1), indent(depth+1), f.Equals, indent(depth+1), f.Default.ASTString(depth+1))
 	}
@@ -840,15 +869,15 @@ type PrefixExpr struct {
 	X  Node
 }
 
-func (p PrefixExpr) LeadingTrivia() []lexer.Token {
+func (p *PrefixExpr) LeadingTrivia() []lexer.Token {
 	return p.Op.LeadingTrivia
 }
 
-func (p PrefixExpr) Span() lexer.Span {
+func (p *PrefixExpr) Span() lexer.Span {
 	return p.Op.Span.Add(spanOf(p.X))
 }
 
-func (p PrefixExpr) ASTString(depth int) string {
+func (p *PrefixExpr) ASTString(depth int) string {
 	return fmt.Sprintf("PrefixExpr\n%sOp: %s\n%sX: %s", indent(depth+1), p.Op, indent(depth+1), p.X.ASTString(depth+1))
 }
 
@@ -856,18 +885,18 @@ type CallExpr struct {
 	Elements []Node
 }
 
-func (c CallExpr) LeadingTrivia() []lexer.Token {
+func (c *CallExpr) LeadingTrivia() []lexer.Token {
 	if len(c.Elements) == 0 {
 		return nil
 	}
 	return leadingTriviaOf(c.Elements[0])
 }
 
-func (c CallExpr) Span() lexer.Span {
+func (c *CallExpr) Span() lexer.Span {
 	return spanOf(c.Elements)
 }
 
-func (c CallExpr) ASTString(depth int) string {
+func (c *CallExpr) ASTString(depth int) string {
 	return fmt.Sprintf("CallExpr\n%sElements: %s", indent(depth+1), printNodeSlice(depth+1, c.Elements))
 }
 
@@ -876,15 +905,15 @@ type PostfixExpr struct {
 	Op lexer.Token
 }
 
-func (p PostfixExpr) LeadingTrivia() []lexer.Token {
+func (p *PostfixExpr) LeadingTrivia() []lexer.Token {
 	return leadingTriviaOf(p.X)
 }
 
-func (p PostfixExpr) Span() lexer.Span {
+func (p *PostfixExpr) Span() lexer.Span {
 	return spanOf(p.X).Add(p.Op.Span)
 }
 
-func (p PostfixExpr) ASTString(depth int) string {
+func (p *PostfixExpr) ASTString(depth int) string {
 	return fmt.Sprintf("PostfixExpr\n%sX: %s\n%sOp: %s", indent(depth+1), p.X.ASTString(depth+1), indent(depth+1), p.Op)
 }
 
@@ -894,15 +923,15 @@ type SelectorExpr struct {
 	Name   Node
 }
 
-func (s SelectorExpr) LeadingTrivia() []lexer.Token {
+func (s *SelectorExpr) LeadingTrivia() []lexer.Token {
 	return leadingTriviaOf(s.X)
 }
 
-func (s SelectorExpr) Span() lexer.Span {
+func (s *SelectorExpr) Span() lexer.Span {
 	return spanOf(s.X).Add(spanOf(s.Name))
 }
 
-func (s SelectorExpr) ASTString(depth int) string {
+func (s *SelectorExpr) ASTString(depth int) string {
 	return fmt.Sprintf("SelectorExpr\n%sX: %s\n%sPeriod: %s\n%sName: %s", indent(depth+1), s.X.ASTString(depth+1), indent(depth+1), s.Period, indent(depth+1), s.Name.ASTString(depth+1))
 }
 
@@ -915,18 +944,18 @@ type PatternCase struct {
 	Comma   lexer.Token
 }
 
-func (p PatternCase) LeadingTrivia() []lexer.Token {
+func (p *PatternCase) LeadingTrivia() []lexer.Token {
 	return p.Or.LeadingTrivia
 }
 
-func (p PatternCase) Span() lexer.Span {
+func (p *PatternCase) Span() lexer.Span {
 	if p.Comma.Type == lexer.Comma {
 		return p.Or.Span.Add(p.Comma.Span)
 	}
 	return p.Or.Span.Add(spanOf(p.Expr))
 }
 
-func (p PatternCase) ASTString(depth int) string {
+func (p *PatternCase) ASTString(depth int) string {
 	if p.Guard == nil {
 		return fmt.Sprintf(
 			"PatternCase\n%sOr: %s\n%sPattern: %s\n%sArrow: %s\n%sExpr: %s\n%sComma: %s", indent(depth+1), p.Or, indent(depth+1),
@@ -943,15 +972,15 @@ type IfMatch struct {
 	RightBrace lexer.Token
 }
 
-func (i IfMatch) LeadingTrivia() []lexer.Token {
+func (i *IfMatch) LeadingTrivia() []lexer.Token {
 	return leadingTriviaOf(i.IfHeader)
 }
 
-func (i IfMatch) Span() lexer.Span {
+func (i *IfMatch) Span() lexer.Span {
 	return spanOf(i.IfHeader).Add(spanOf(i.Cases)).Add(spanOf(i.RightBrace))
 }
 
-func (i IfMatch) ASTString(depth int) string {
+func (i *IfMatch) ASTString(depth int) string {
 	if i.LeftBrace.Type == lexer.LeftBrace {
 		return fmt.Sprintf(
 			"IfMatch\n%sIfHeader: %s\n%sLeftBrace: %s\n%sCases: %s\n%sRightBrace: %s", indent(depth+1), i.IfHeader.ASTString(depth+1), indent(depth+1),
@@ -966,15 +995,15 @@ type BasicString struct {
 	Lit lexer.Token
 }
 
-func (s BasicString) LeadingTrivia() []lexer.Token {
+func (s *BasicString) LeadingTrivia() []lexer.Token {
 	return s.Lit.LeadingTrivia
 }
 
-func (s BasicString) Span() lexer.Span {
+func (s *BasicString) Span() lexer.Span {
 	return s.Lit.Span
 }
 
-func (s BasicString) ASTString(depth int) string {
+func (s *BasicString) ASTString(depth int) string {
 	return fmt.Sprintf("BasicString %s", s.Lit)
 }
 
@@ -982,18 +1011,18 @@ type InterpolatedString struct {
 	Parts []Node
 }
 
-func (s InterpolatedString) LeadingTrivia() []lexer.Token {
+func (s *InterpolatedString) LeadingTrivia() []lexer.Token {
 	if len(s.Parts) == 0 {
 		return nil
 	}
 	return leadingTriviaOf(s.Parts[0])
 }
 
-func (s InterpolatedString) Span() lexer.Span {
+func (s *InterpolatedString) Span() lexer.Span {
 	return spanOf(s.Parts)
 }
 
-func (s InterpolatedString) ASTString(depth int) string {
+func (s *InterpolatedString) ASTString(depth int) string {
 	return fmt.Sprintf("InterpolatedString\n%sParts: %s", indent(depth+1), printNodeSlice(depth+1, s.Parts))
 }
 
@@ -1029,15 +1058,15 @@ type IndexExpr struct {
 	RightBracket  lexer.Token
 }
 
-func (i IndexExpr) LeadingTrivia() []lexer.Token {
+func (i *IndexExpr) LeadingTrivia() []lexer.Token {
 	return leadingTriviaOf(i.X)
 }
 
-func (i IndexExpr) Span() lexer.Span {
+func (i *IndexExpr) Span() lexer.Span {
 	return spanOf(i.X).Add(i.RightBracket.Span)
 }
 
-func (i IndexExpr) ASTString(depth int) string {
+func (i *IndexExpr) ASTString(depth int) string {
 	return fmt.Sprintf("IndexExpr\n%sX: %s\n%sLeftBracket: %s\n%sIndexElements: %s\n%sRightBracket: %s", indent(depth+1), i.X.ASTString(depth+1), indent(depth+1), i.LeftBracket, indent(depth+1), printNodeSlice(depth+1, i.IndexElements), indent(depth+1), i.RightBracket)
 }
 
@@ -1046,39 +1075,39 @@ type ImportDecl struct {
 	Package Node
 }
 
-func (i ImportDecl) LeadingTrivia() []lexer.Token {
+func (i *ImportDecl) LeadingTrivia() []lexer.Token {
 	return i.Import.LeadingTrivia
 }
 
-func (i ImportDecl) Span() lexer.Span {
+func (i *ImportDecl) Span() lexer.Span {
 	return i.Import.Span.Add(spanOf(i.Package))
 }
 
-func (i ImportDecl) ASTString(depth int) string {
+func (i *ImportDecl) ASTString(depth int) string {
 	return fmt.Sprintf("ImportDecl\n%sImport: %s\n%sPackage: %s", indent(depth+1), i.Import, indent(depth+1), i.Package.ASTString(depth+1))
 }
 
 type ImportDeclPackage struct {
 	Binding Node
 	Equals  lexer.Token
-	Path    Node
+	Path    *BasicString
 }
 
-func (i ImportDeclPackage) LeadingTrivia() []lexer.Token {
+func (i *ImportDeclPackage) LeadingTrivia() []lexer.Token {
 	if i.Binding != nil {
 		return leadingTriviaOf(i.Binding)
 	}
 	return leadingTriviaOf(i.Path)
 }
 
-func (i ImportDeclPackage) Span() lexer.Span {
+func (i *ImportDeclPackage) Span() lexer.Span {
 	if i.Binding != nil {
 		return spanOf(i.Binding).Add(i.Equals.Span).Add(spanOf(i.Path))
 	}
 	return spanOf(i.Path)
 }
 
-func (i ImportDeclPackage) ASTString(depth int) string {
+func (i *ImportDeclPackage) ASTString(depth int) string {
 	if i.Binding != nil {
 		return fmt.Sprintf("ImportDeclPackage\n%sBinding: %s\n%sEquals: %s\n%sPath: %s", indent(depth+1), i.Binding.ASTString(depth+1), indent(depth+1), i.Equals, indent(depth+1), i.Path.ASTString(depth+1))
 	}
@@ -1095,15 +1124,15 @@ type ImplDecl struct {
 	Body   Node
 }
 
-func (i ImplDecl) LeadingTrivia() []lexer.Token {
+func (i *ImplDecl) LeadingTrivia() []lexer.Token {
 	return i.Impl.LeadingTrivia
 }
 
-func (i ImplDecl) Span() lexer.Span {
+func (i *ImplDecl) Span() lexer.Span {
 	return i.Impl.Span.Add(spanOf(i.Args)).Add(spanOf(i.Clause)).Add(spanOf(i.Body))
 }
 
-func (i ImplDecl) ASTString(depth int) string {
+func (i *ImplDecl) ASTString(depth int) string {
 	// body can be nil and clause can be nil
 	// so we have the case where nothing is nil
 	// the case where body is nil
@@ -1131,15 +1160,15 @@ type ArrayType struct {
 	Type         Node
 }
 
-func (a ArrayType) LeadingTrivia() []lexer.Token {
+func (a *ArrayType) LeadingTrivia() []lexer.Token {
 	return a.LeftBracket.LeadingTrivia
 }
 
-func (a ArrayType) Span() lexer.Span {
+func (a *ArrayType) Span() lexer.Span {
 	return a.LeftBracket.Span.Add(spanOf(a.Type))
 }
 
-func (a ArrayType) ASTString(depth int) string {
+func (a *ArrayType) ASTString(depth int) string {
 	if a.Length.Type != lexer.Number {
 		return fmt.Sprintf("ArrayType\n%sLeftBracket: %s\n%sRightBracket: %s\n%sType: %s", indent(depth+1), a.LeftBracket, indent(depth+1), a.RightBracket, indent(depth+1), a.Type.ASTString(depth+1))
 	}
@@ -1151,14 +1180,14 @@ type NillableType struct {
 	QuestionMark lexer.Token
 }
 
-func (n NillableType) LeadingTrivia() []lexer.Token {
+func (n *NillableType) LeadingTrivia() []lexer.Token {
 	return leadingTriviaOf(n.Type)
 }
 
-func (n NillableType) Span() lexer.Span {
+func (n *NillableType) Span() lexer.Span {
 	return spanOf(n.Type).Add(n.QuestionMark.Span)
 }
 
-func (n NillableType) ASTString(depth int) string {
+func (n *NillableType) ASTString(depth int) string {
 	return fmt.Sprintf("NillableType\n%sType: %s\n%sQuestionMark: %s", indent(depth+1), n.Type.ASTString(depth+1), indent(depth+1), n.QuestionMark)
 }

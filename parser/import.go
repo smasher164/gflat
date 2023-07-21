@@ -6,18 +6,19 @@ import (
 	"path/filepath"
 
 	"github.com/samber/lo"
+	"github.com/smasher164/gflat/ast"
 )
 
 type Importer struct {
 	root     fs.FS
-	PkgCache map[string]Node
+	PkgCache map[string]*ast.Package
 	Sorted   []string
 }
 
 func NewImporter(root fs.FS) *Importer {
 	return &Importer{
 		root:     root,
-		PkgCache: make(map[string]Node),
+		PkgCache: make(map[string]*ast.Package),
 	}
 }
 
@@ -27,7 +28,7 @@ func (i *Importer) importCrawl(path, scriptFile string) (err error) {
 		return err
 	}
 	{
-		pkg := pkg.(Package)
+		pkg := pkg.(*ast.Package)
 		for path := range pkg.Imports {
 			if _, ok := i.PkgCache[path]; !ok {
 				if err = i.importCrawl(path, ""); err != nil {
@@ -46,7 +47,7 @@ func (i *Importer) checkCycle() error {
 		pos[path] = idx
 	}
 	for path, pkg := range i.PkgCache {
-		for dep := range pkg.(Package).Imports {
+		for dep := range pkg.Imports {
 			if pos[path] <= pos[dep] {
 				// TODO: print the full path in the cycle
 				return fmt.Errorf("import cycle detected: %s -> %s", path, dep)
@@ -67,7 +68,7 @@ func (i *Importer) ImportCrawl(path, scriptFile string) error {
 	return i.checkCycle()
 }
 
-func (i *Importer) ImportSingle(path, scriptFile string) (pkg Node, err error) {
+func (i *Importer) ImportSingle(path, scriptFile string) (pkg ast.Node, err error) {
 	if pkg, ok := i.PkgCache[path]; ok {
 		return pkg, nil
 	}
@@ -100,6 +101,6 @@ func (i *Importer) ImportSingle(path, scriptFile string) (pkg Node, err error) {
 	if err != nil {
 		return pkg, err
 	}
-	i.PkgCache[path] = pkg
+	i.PkgCache[path] = pkg.(*ast.Package)
 	return pkg, nil
 }

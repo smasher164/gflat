@@ -3,6 +3,7 @@ package parser_test
 import (
 	"testing"
 
+	"github.com/smasher164/gflat/ast"
 	"github.com/smasher164/gflat/fsx"
 	"github.com/smasher164/gflat/parser"
 )
@@ -27,7 +28,7 @@ func TestPackage(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	parser.PrintAST(pkg)
+	ast.PrintAST(pkg)
 }
 
 func TestFile(t *testing.T) {
@@ -168,5 +169,5 @@ func TestFile(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	parser.PrintAST(f)
+	ast.PrintAST(f)
 }

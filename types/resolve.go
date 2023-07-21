@@ -15,9 +15,11 @@ func (r *Resolver) Resolve(env *Env, n parser.Node) parser.Node {
 	case parser.BinaryExpr:
 		n.Left = r.Resolve(env, n.Left)
 		n.Right = r.Resolve(env, n.Right)
+		r.envOf[n] = env
 		return n
 	case parser.Stmt:
 		n.Stmt = r.Resolve(env, n.Stmt)
+		r.envOf[n] = env
 		return n
 	case ResolvedPackage:
 		// introduce package scope
@@ -43,9 +45,11 @@ func (r *Resolver) Resolve(env *Env, n parser.Node) parser.Node {
 		}
 		env.AddSymbol(n.Path, sym)
 		// TODO: resolve cross-file identifiers
+		r.envOf[n] = env
 		return n
 	case parser.File:
 		n.Body = r.Resolve(env, n.Body)
+		r.envOf[n] = env
 		return n
 	case parser.Ident:
 		// what if ident is "_"?
@@ -57,7 +61,9 @@ func (r *Resolver) Resolve(env *Env, n parser.Node) parser.Node {
 		if ok {
 			return def.Def
 		}
-		return UnresolvedIdent{OriginalIdent: n, Env: env}
+		uid := UnresolvedIdent{n}
+		r.envOf[uid] = env // should this store uid or n?
+		return uid
 	case parser.TypeArg:
 		def, ok := env.LookupStack(n.TypeArg.Data)
 		if ok {

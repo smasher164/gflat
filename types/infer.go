@@ -1,5 +1,6 @@
 package types
 
+/*
 import (
 	"fmt"
 
@@ -295,13 +296,13 @@ func (r *Resolver) Unify(t1, t2 Type) bool {
 			return true
 		}
 	}
-	/*
 		// TODO: support type schemes, like type applications.
 		Sum
 		Tuple
 		Map
 		Forall
 		TypeApplication
-	*/
+
 	return false
 }
+*/

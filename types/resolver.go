@@ -1,5 +1,7 @@
 package types
 
+/*
+
 import (
 	"fmt"
 
@@ -96,10 +98,24 @@ var Universe = &Env{
 
 type Resolver struct {
 	importer *parser.Importer
+	envOf    map[parser.Node]*Env // TODO: should we remove some of the ident nodes whose only purpose is to point to an env?
+	typeOf   map[parser.Node]Type
 }
 
 func NewResolver(importer *parser.Importer) *Resolver {
-	return &Resolver{importer: importer}
+	return &Resolver{
+		importer: importer,
+		envOf:    make(map[parser.Node]*Env),
+		typeOf:   make(map[parser.Node]Type),
+	}
+}
+
+func (r Resolver) EnvOf(n parser.Node) *Env {
+	return r.envOf[n]
+}
+
+func (r Resolver) TypeOf(n parser.Node) Type {
+	return r.typeOf[n]
 }
 
 func (r *Resolver) ResolveBuild() {
@@ -119,7 +135,7 @@ func Select(x parser.Node, sel parser.Node) parser.Node {
 	// }
 	switch x := x.(type) {
 	case TypeName:
-		id := x.OriginalIdent.(parser.Ident).Name.Data
+		id := x.Name.Data
 		var selID string
 		switch sel := sel.(type) {
 		case parser.Ident:
@@ -536,3 +552,4 @@ func findUndefined(nd parser.Node) (id string, found bool) {
 	})
 	return id, found
 }
+*/
