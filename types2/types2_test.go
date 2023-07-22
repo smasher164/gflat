@@ -18,7 +18,7 @@ func TestInferExpression(t *testing.T) {
 	`},
 	})
 	importer := parser.NewImporter(fsys)
-	if err := importer.ImportCrawl("a", "test.gf"); err != nil {
+	if err := importer.ImportCrawl("a", ""); err != nil {
 		t.Fatal(err)
 	}
 	tc := types2.NewChecker(importer)

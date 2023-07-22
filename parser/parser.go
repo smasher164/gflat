@@ -74,7 +74,12 @@ func ParsePackage(fsys fs.FS, scriptFile string, filenames ...string) (ast.Node,
 		} else {
 			if file, ok := file.(*ast.File); ok {
 				file.Filename = filename
-				if file.Package.Type == lexer.Package {
+				if filename == scriptFile {
+					if file.Package.Type == lexer.Package {
+						return nil, fmt.Errorf("script file cannot be a package file")
+					}
+					pkg.ScriptFile = file
+				} else {
 					pkg.PackageFiles = append(pkg.PackageFiles, file)
 					name := file.PackageName.Name.Data
 					if pkg.Name == "" {
@@ -83,10 +88,6 @@ func ParsePackage(fsys fs.FS, scriptFile string, filenames ...string) (ast.Node,
 						if pkg.Name != name {
 							return nil, fmt.Errorf("package name mismatch: %s != %s", pkg.Name, name)
 						}
-					}
-				} else {
-					if filename == scriptFile {
-						pkg.ScriptFile = file
 					}
 				}
 				maps.Copy(pkg.Imports, file.Imports)

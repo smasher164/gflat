@@ -55,7 +55,9 @@ type Bind interface {
 	isBind()
 }
 
-type VarBind struct{}
+type VarBind struct {
+	Type Type
+}
 
 func (VarBind) isBind() {}
 

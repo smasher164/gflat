@@ -104,8 +104,8 @@ func (c *Codegen) codegenExpr(f fsx.WriteableFile, x ast.Node) []string {
 	switch x := x.(type) {
 	case *ast.Block:
 		tblk := c.checker.GetType(x)
-		tmp := c.checker.FreshName()                       // TODO: also add to env
-		fmt.Fprintf(f, "var %s %s\n", tmp.Name.Data, tblk) // TODO: print go type
+		tmp := c.checker.FreshName().Name.Data               // TODO: also add to env
+		fmt.Fprintf(f, "var %s %s\n", tmp, typeString(tblk)) // TODO: print go type
 		// blocks are weird, cause they can be used in expression position.
 		fmt.Fprintf(f, "{\n")
 		for i, elem := range x.Body {
@@ -118,7 +118,7 @@ func (c *Codegen) codegenExpr(f fsx.WriteableFile, x ast.Node) []string {
 		}
 		fmt.Fprintf(f, "_ = %s\n", tmp)
 		fmt.Fprintf(f, "}\n")
-		return []string{tmp.Name.Data}
+		return []string{tmp}
 	case *ast.Stmt:
 		c.codegenExpr(f, x.Stmt)
 		fmt.Fprintf(f, "\n")
@@ -126,29 +126,119 @@ func (c *Codegen) codegenExpr(f fsx.WriteableFile, x ast.Node) []string {
 	case *ast.LetDecl:
 		vars := c.codegenExpr(f, x.Rhs)
 		tlet := c.checker.GetType(x.Destructure)
+		goTLet := typeString(tlet)
 		switch des := x.Destructure.(type) {
 		case *ast.Ident:
-			fmt.Fprintf(f, "var %s %s = %s\n", des.Name.Data, tlet, vars[0])
+			fmt.Fprintf(f, "var %s %s = %s\n", des.Name.Data, goTLet, vars[0])
 		case *ast.TypeAnnotation:
 			if varname, ok := des.Destructure.(*ast.Ident); ok {
-				fmt.Fprintf(f, "var %s %s = %s\n", varname.Name.Data, tlet, vars[0])
+				fmt.Fprintf(f, "var %s %s = %s\n", varname.Name.Data, goTLet, vars[0])
 			}
 		}
 		return []string{"_"}
+	case *ast.PrefixExpr:
+		expr := c.codegenExpr(f, x.X)[0]
+		tprefix := c.checker.GetType(x)
+		goTPrefix := typeString(tprefix)
+		pvar := c.checker.FreshName().Name.Data
+		fmt.Fprintf(f, "var %s %s = %s%s\n", pvar, goTPrefix, opString(x.Op.Type), expr)
+		return []string{pvar}
 	case *ast.BinaryExpr:
-		lvars := c.codegenExpr(f, x.Left)
-		rvars := c.codegenExpr(f, x.Right)
-		tbin := c.checker.GetType(x)
-		bvar := c.checker.FreshName()
-		switch x.Op.Type {
-		case lexer.Plus:
-			fmt.Fprintf(f, "var %s %s = %s + %s\n", bvar.Name.Data, tbin, lvars[0], rvars[0])
+		// if left or right is a constant, we don't need temporaries
+		var left string
+		switch l := x.Left.(type) {
+		case *ast.Number:
+			left = l.Lit.Data
+		case *ast.BasicString:
+			left = l.Lit.Data
+		default:
+			left = c.codegenExpr(f, x.Left)[0]
 		}
+		var right string
+		switch r := x.Right.(type) {
+		case *ast.Number:
+			right = r.Lit.Data
+		case *ast.BasicString:
+			right = r.Lit.Data
+		default:
+			right = c.codegenExpr(f, x.Right)[0]
+		}
+		tbin := c.checker.GetType(x)
+		goTBin := typeString(tbin)
+		bvar := c.checker.FreshName()
+		fmt.Fprintf(f, "var %s %s = %s %s %s\n", bvar.Name.Data, goTBin, left, opString(x.Op.Type), right)
 		return []string{bvar.Name.Data}
 	case *ast.Number:
 		nvar := c.checker.FreshName()
-		fmt.Fprintf(f, "var %s %s = %s\n", nvar.Name.Data, c.checker.GetType(x), x.Lit.Data)
+		fmt.Fprintf(f, "var %s %s = %s\n", nvar.Name.Data, typeString(c.checker.GetType(x)), x.Lit.Data)
 		return []string{nvar.Name.Data}
+	case *ast.BasicString:
+		nvar := c.checker.FreshName()
+		fmt.Fprintf(f, "var %s %s = %s\n", nvar.Name.Data, typeString(c.checker.GetType(x)), x.Lit.Data)
+		return []string{nvar.Name.Data}
+	case *ast.Ident:
+		return []string{x.Name.Data}
 	}
 	panic(fmt.Sprintf("unhandled node: %T", x))
+}
+
+func opString(t lexer.TokenType) string {
+	switch t {
+	case lexer.Plus:
+		return "+"
+	case lexer.Minus:
+		return "-"
+	case lexer.Times:
+		return "*"
+	case lexer.Divide:
+		return "/"
+	case lexer.Remainder:
+		return "%"
+	case lexer.LeftShift:
+		return "<<"
+	case lexer.RightShift:
+		return ">>"
+	case lexer.And:
+		return "&"
+	case lexer.Or:
+		return "|"
+	case lexer.Caret:
+		return "^"
+	case lexer.LogicalAnd:
+		return "&&"
+	case lexer.LogicalOr:
+		return "||"
+	case lexer.LogicalEquals:
+		return "=="
+	case lexer.NotEquals:
+		return "!="
+	case lexer.LessThan:
+		return "<"
+	case lexer.LessThanEquals:
+		return "<="
+	case lexer.GreaterThan:
+		return ">"
+	case lexer.GreaterThanEquals:
+		return ">="
+	case lexer.Not:
+		return "!"
+	case lexer.Assign, lexer.DotDot, lexer.LeftArrow, lexer.Exponentiation, lexer.Colon, lexer.Pipe, lexer.QuestionPipe, lexer.Tilde, lexer.QuestionMark:
+		panic(fmt.Sprintf("unhandled binary op: %s", t))
+	default:
+		panic(fmt.Sprintf("unhandled binary op: %s", t))
+	}
+}
+
+func typeString(t types2.Type) string {
+	switch t := t.(type) {
+	case types2.Base:
+		return t.String()
+	case types2.Named:
+		return t.Name.Name.Data
+	case types2.TypeVar:
+		if t.Ref.Bound {
+			return typeString(t.Ref.Type)
+		}
+	}
+	panic("TODO: GoString")
 }

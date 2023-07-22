@@ -38,6 +38,8 @@ func NewChecker(importer *parser.Importer) *Checker {
 	for name, ty := range BaseMap {
 		c.AddSymbol(universe, name, BaseTypeBind{ty})
 	}
+	c.AddSymbol(universe, "true", VarBind{Bool})
+	c.AddSymbol(universe, "false", VarBind{Bool})
 	c.universe = universe
 	return c
 }
@@ -103,17 +105,56 @@ func (c *Checker) infer(x ast.Node) {
 		c.typeOf[x.Destructure] = tann
 		c.typeOf[x] = tann
 	case *ast.Ident:
-		if _, ok := c.typeOf[x]; ok {
-			return
+		// look up in environment
+		// get its type
+		if b, _, ok := c.envOf[x].LookupStack(x.Name.Data); ok {
+			if b, ok := b.(VarBind); ok && b.Type != nil {
+				c.typeOf[x] = b.Type
+				break
+			}
 		}
 		fresh := c.FreshTypeVar()
 		c.typeOf[x] = NewTypeVar(fresh)
 	case *ast.Number:
 		c.typeOf[x] = Int
+	case *ast.BasicString:
+		c.typeOf[x] = String
 	case *ast.BinaryExpr:
-		c.infer(x.Left)
-		c.check(x.Right, c.typeOf[x.Left])
-		c.typeOf[x] = c.typeOf[x.Left]
+		switch x.Op.Type {
+		case lexer.Plus:
+			c.infer(x.Left)
+			c.check(x.Right, c.typeOf[x.Left])
+			c.typeOf[x] = c.typeOf[x.Left]
+		case lexer.Minus, lexer.Times, lexer.LeftShift, lexer.RightShift, lexer.Remainder, lexer.Divide, lexer.Or, lexer.And, lexer.Caret, lexer.Exponentiation:
+			c.check(x.Left, Int)
+			c.check(x.Right, Int)
+			c.typeOf[x] = Int
+		case lexer.LogicalAnd, lexer.LogicalOr:
+			c.check(x.Left, Bool)
+			c.check(x.Right, Bool)
+			c.typeOf[x] = Bool
+		case lexer.LogicalEquals, lexer.NotEquals:
+			c.infer(x.Left)
+			c.check(x.Right, c.typeOf[x.Left])
+			c.typeOf[x] = Bool
+		case lexer.LessThan, lexer.LessThanEquals, lexer.GreaterThan, lexer.GreaterThanEquals:
+			c.check(x.Left, Int)
+			c.check(x.Right, Int)
+			c.typeOf[x] = Bool
+		default:
+			panic(fmt.Sprintf("unhandled binary operator %v", x.Op))
+		}
+	case *ast.PrefixExpr:
+		switch x.Op.Type {
+		case lexer.Plus, lexer.Minus, lexer.Caret:
+			c.check(x.X, Int)
+			c.typeOf[x] = Int
+		case lexer.Not:
+			c.check(x.X, Bool)
+			c.typeOf[x] = Bool
+		default:
+			panic(fmt.Sprintf("unhandled prefix operator %v", x.Op))
+		}
 	}
 }
 
@@ -145,12 +186,58 @@ func (c *Checker) reifyType(t ast.Node) Type {
 	panic("TODO: reifyType")
 }
 
+func (c *Checker) get(t Type) Type {
+	if tvar, ok := t.(TypeVar); ok {
+		if tvar.Ref.Bound {
+			return c.get(tvar.Ref.Type)
+		}
+	}
+	return t
+}
+
+func (c *Checker) simpleEquals(a, b Type) bool {
+	if a, ok := a.(Base); ok {
+		return a == b
+	}
+	if a, ok := a.(Named); ok {
+		if b, ok := b.(Named); ok {
+			// this doesn't work for type aliases, if we add them
+			return a.Name == b.Name
+		}
+	}
+	return false
+}
+
 func (c *Checker) unify(a, b Type) {
-	if a == b {
+	a, b = c.get(a), c.get(b)
+	if c.simpleEquals(a, b) {
 		return
 	}
-	fmt.Println("unify", a, b)
-	panic("unify")
+	if aTV, ok := a.(TypeVar); ok {
+		// TODO: occurs check
+		if aTV.Ref.Bound {
+			if c.simpleEquals(aTV.Ref.Type, b) {
+				return
+			}
+			panic(fmt.Sprintf("bound metavar %s does not match %s", aTV.Ref.ID.TypeArg.Data, b))
+		}
+		aTV.Ref.Bound = true
+		aTV.Ref.Type = b
+		return
+	}
+	if bTV, ok := b.(TypeVar); ok {
+		// TODO: occurs check
+		if bTV.Ref.Bound {
+			if c.simpleEquals(bTV.Ref.Type, a) {
+				return
+			}
+			panic(fmt.Sprintf("bound metavar %s does not match %s", bTV.Ref.ID.TypeArg.Data, a))
+		}
+		bTV.Ref.Bound = true
+		bTV.Ref.Type = a
+		return
+	}
+	panic(fmt.Sprintf("TODO: unify %#v %#v", a, b))
 }
 
 // type packageResolver struct {
@@ -171,9 +258,14 @@ func (c *Checker) resolve(env *Env, x ast.Node) {
 		c.envOf[x] = env
 	case *ast.Number:
 		c.envOf[x] = env
+	case *ast.BasicString:
+		c.envOf[x] = env
 	case *ast.BinaryExpr:
 		c.resolve(env, x.Left)
 		c.resolve(env, x.Right)
+		c.envOf[x] = env
+	case *ast.PrefixExpr:
+		c.resolve(env, x.X)
 		c.envOf[x] = env
 	case *ast.Block:
 		blockScope := env.AddScope()
@@ -181,6 +273,8 @@ func (c *Checker) resolve(env *Env, x ast.Node) {
 			c.resolve(blockScope, elem)
 		}
 		c.envOf[x] = blockScope
+	case *ast.Ident:
+		// TODO: what do we do here?
 	// p := &packageResolver{
 	// 	Checker:      c,
 	// 	topLevelDeps: make(map[string][]string),
@@ -203,7 +297,7 @@ func (c *Checker) resolveSignature(env *Env, sig *ast.FunctionSignature) {
 		c.envOf[sig.Param] = env
 		c.envOf[param.Destructure] = env
 		paramName := param.Destructure.(*ast.Ident)
-		paramBind := VarBind{}
+		paramBind := VarBind{} // stick type in here?
 		c.AddSymbol(env, paramName.Name.Data, paramBind)
 		c.resolveTypeAnnotation(env, param.Type)
 		// TODO: ignoring param type for now
@@ -444,115 +538,3 @@ func (c *Checker) resolveTopLevel(packageScope, curr *Env, x ast.Node) {
 func (c *Checker) appErr(err error) {
 	c.err = errors.Join(c.err, err)
 }
-
-// func (c *Checker) resolveUnresolvedTopLevel(packageScope *Env, x parser.Node) {
-
-// }
-
-// traverse down in name resolution. if you encounter a name use for something in package scope, add an edge from the def to the use.
-// func (p *packageResolver) resolveTopLevel() {
-// 	for _, pkgFile := range p.pkg.PackageFiles {
-// 		_ = pkgFile
-// 	}
-// }
-
-// func (p *packageResolver) checkTopLevelCycles() {
-
-// }
-
-// func (c *Checker) collectDestructure(fileDefs map[string]struct {
-// 	parser.Node
-// 	isFromImport bool
-// }, destructure parser.Node, isFromImport bool) {
-// 	switch destructure := destructure.(type) {
-// 	case parser.Ident:
-// 		if _, ok := fileDefs[destructure.Name.Data]; ok {
-// 			panic(fmt.Sprintf("%s was already defined", destructure.Name.Data))
-// 		}
-// 		fileDefs[destructure.Name.Data] = struct {
-// 			parser.Node
-// 			isFromImport bool
-// 		}{Node: destructure, isFromImport: isFromImport}
-// 	case parser.Tuple:
-// 		for _, x := range destructure.Elements {
-// 			c.collectDestructure(fileDefs, x, isFromImport)
-// 		}
-// 	case parser.CommaElement:
-// 		c.collectDestructure(fileDefs, destructure.X, isFromImport)
-// 	case parser.IndexExpr:
-// 		c.collectDestructure(fileDefs, destructure.X, isFromImport)
-// 		for _, x := range destructure.IndexElements {
-// 			c.collectDestructure(fileDefs, x, isFromImport)
-// 		}
-// 	case parser.ImportDeclPackage:
-// 		if destructure.Binding == nil {
-// 			if prefix, _, ok := module.SplitPathVersion(destructure.Path.Lit.Data); ok {
-// 				id := path.Base(prefix)
-// 				if _, ok := fileDefs[id]; ok {
-// 					panic(fmt.Sprintf("%s was already defined", id))
-// 				}
-// 				fileDefs[id] = struct {
-// 					parser.Node
-// 					isFromImport bool
-// 				}{Node: destructure, isFromImport: isFromImport}
-// 			} else {
-// 				panic("unreachable")
-// 			}
-// 		} else {
-// 			c.collectDestructure(fileDefs, destructure.Binding, isFromImport)
-// 		}
-// 	}
-// }
-
-// func (c *Checker) collectTopLevelDecls(env *Env, pkg parser.Package) {
-// 	// value restriction?
-// 	for _, pkgFile := range pkg.PackageFiles {
-// 		pkgFile := pkgFile
-// 		fileDefs := make(map[string]struct {
-// 			bind         Bind
-// 			isFromImport bool
-// 		})
-// 		for _, x := range pkgFile.Body.Body {
-// 			switch x := x.(type) {
-// 			case parser.Stmt:
-// 				switch x := x.Stmt.(type) {
-// 				case parser.TypeDecl:
-// 					// redo this whole thing
-// 					c.collectDestructure(fileDefs, x.Name, functions TypeBind{x}, false)
-// 				case parser.LetDecl:
-// 					c.collectDestructure(fileDefs, x.Destructure, VarBind{}, false)
-// 				case parser.LetFunction:
-// 					c.collectDestructure(fileDefs, x.Name, VarBind{}, false)
-// 				case parser.Function:
-// 					c.collectDestructure(fileDefs, x.Name, VarBind{}, false)
-// 				case parser.ImportDecl:
-// 					c.collectDestructure(fileDefs, x.Package, true)
-// 				}
-// 			case parser.TypeDecl:
-// 				c.collectDestructure(fileDefs, x.Name, TypeBind{x}, false)
-// 			case parser.LetDecl:
-// 				c.collectDestructure(fileDefs, x.Destructure, VarBind{}, false)
-// 			case parser.LetFunction:
-// 				c.collectDestructure(fileDefs, x.Name, VarBind{}, false)
-// 			case parser.Function:
-// 				c.collectDestructure(fileDefs, x.Name, VarBind{}, false)
-// 			case parser.ImportDecl:
-// 				c.collectDestructure(fileDefs, x.Package, true)
-// 			}
-// 		}
-// 		fileEnv, ok := c.GetEnv(pkgFile)
-// 		if !ok {
-// 			fileEnv = env.AddScope()
-// 			c.SetEnv(pkgFile, fileEnv) // will this persist after changes to File?
-// 		}
-// 		for name, def := range fileDefs {
-// 			// need to know if it was from an import or not
-// 			// imports go in file scope, and everything else goes in package scope
-// 			if def.isFromImport {
-// 				fileEnv.AddSymbol(name, def.Node) // create Def instead of passing node?
-// 			} else {
-// 				env.AddSymbol(name, def.Node)
-// 			}
-// 		}
-// 	}
-// }
