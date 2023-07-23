@@ -708,7 +708,7 @@ func (p *parser) parseCase(ifMatch *ast.IfMatch, setRbrace bool) ast.Node {
 	return &patCase
 }
 
-func (p *parser) parseGuard() ast.Node {
+func (p *parser) parseGuard() *ast.IfHeader {
 	defer p.trace("parseGuard")()
 	guard := ast.IfHeader{If: p.tok}
 	p.next()

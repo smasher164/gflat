@@ -186,7 +186,13 @@ func (tfs *treeFS) Create(name string) (WriteableFile, error) {
 		return nameOf(f) == name
 	})
 	if i >= 0 {
-		return nil, &fs.PathError{Op: "create", Path: name, Err: fs.ErrExist}
+		// if it already exists, truncate it
+		if f, ok := tfs.entries[i].(*treeFile); ok {
+			f.data = nil
+			return f, nil
+		} else {
+			return nil, &fs.PathError{Op: "create", Path: name, Err: fs.ErrExist}
+		}
 	}
 	f := newTreeFile(name, 0, nil)
 	tfs.entries = append(tfs.entries, f)

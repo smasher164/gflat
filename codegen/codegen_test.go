@@ -42,8 +42,22 @@ func Test(t *testing.T) {
 		{"a/test6.gf", `
 		package a
 
-		let x = !true
+		let x = true && false
 		`},
+		{"a/test7.gf", `
+		package a
+
+		let x = if (true) 1 else 2
+		`},
+		// {"a/test8.gf", `
+		// package a
+
+		// let x = {
+		// 	let y = 1
+		// 	let z = 2
+		// 	y + z
+		// }
+		// `},
 	})
 	importer := parser.NewImporter(fsys)
 	if err := importer.ImportCrawl("a", ""); err != nil {

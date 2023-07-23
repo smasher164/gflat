@@ -155,6 +155,27 @@ func (c *Checker) infer(x ast.Node) {
 		default:
 			panic(fmt.Sprintf("unhandled prefix operator %v", x.Op))
 		}
+	case *ast.IfElse:
+		c.check(x.IfHeader, Bool)
+		c.infer(x.Body)
+		c.check(x.ElseBody, c.typeOf[x.Body])
+		c.typeOf[x] = c.typeOf[x.Body]
+	case *ast.IfHeader:
+		c.infer(x.Cond)
+		c.typeOf[x] = c.typeOf[x.Cond]
+		// should probably panic if something isn't in the typeOf map
+	case *ast.Tuple:
+		// If it's a length 1 tuple with no trailing comma, it's just the type of the element
+		// TODO: does this take into account assignments and stuff?
+		if len(x.Elements) == 1 {
+			if elem, ok := x.Elements[0].(*ast.CommaElement); ok {
+				if elem.Comma.Type != lexer.Comma {
+					c.infer(elem.X)
+					c.typeOf[elem] = c.typeOf[elem.X]
+					c.typeOf[x] = c.typeOf[elem.X]
+				}
+			}
+		}
 	}
 }
 
@@ -237,7 +258,7 @@ func (c *Checker) unify(a, b Type) {
 		bTV.Ref.Type = a
 		return
 	}
-	panic(fmt.Sprintf("TODO: unify %#v %#v", a, b))
+	panic(fmt.Sprintf("TODO: unify %v %v", a, b))
 }
 
 // type packageResolver struct {
@@ -275,6 +296,23 @@ func (c *Checker) resolve(env *Env, x ast.Node) {
 		c.envOf[x] = blockScope
 	case *ast.Ident:
 		// TODO: what do we do here?
+		c.envOf[x] = env
+	case *ast.IfElse:
+		c.resolve(env, x.IfHeader)
+		c.resolve(env, x.Body)
+		c.resolve(env, x.ElseBody)
+		c.envOf[x] = env
+	case *ast.IfHeader:
+		c.resolve(env, x.Cond)
+		c.envOf[x] = env
+	case *ast.Tuple:
+		for _, elem := range x.Elements {
+			c.resolve(env, elem)
+		}
+		c.envOf[x] = env
+	case *ast.CommaElement:
+		c.resolve(env, x.X)
+		c.envOf[x] = env
 	// p := &packageResolver{
 	// 	Checker:      c,
 	// 	topLevelDeps: make(map[string][]string),

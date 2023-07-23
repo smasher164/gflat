@@ -642,7 +642,7 @@ func (i *IfHeader) ASTString(depth int) string {
 }
 
 type If struct {
-	IfHeader Node
+	IfHeader *IfHeader
 	Body     Node
 }
 
@@ -663,7 +663,7 @@ func (i *If) ASTString(depth int) string {
 }
 
 type IfElse struct {
-	IfHeader Node
+	IfHeader *IfHeader
 	Body     Node
 	Else     lexer.Token
 	ElseBody Node
@@ -938,7 +938,7 @@ func (s *SelectorExpr) ASTString(depth int) string {
 type PatternCase struct {
 	Or      lexer.Token
 	Pattern Node
-	Guard   Node
+	Guard   *IfHeader
 	Arrow   lexer.Token
 	Expr    Node
 	Comma   lexer.Token
