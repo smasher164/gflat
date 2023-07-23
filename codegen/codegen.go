@@ -159,8 +159,9 @@ func (c *Codegen) codegenExpr(f fsx.WriteableFile, x ast.Node, topLevel bool) []
 		// fmt.Fprintf(f, "}\n")
 		return []string{tmp}
 	case *ast.Stmt:
-		c.codegenExpr(f, x.Stmt, topLevel)
-		fmt.Fprintf(f, "\n")
+		vars := c.codegenExpr(f, x.Stmt, topLevel)
+		// fmt.Fprintf(f, "\n")
+		fmt.Fprintf(f, "_ = %s\n", vars[0])
 		return []string{"_"}
 	case *ast.LetDecl:
 		vars := c.codegenExpr(f, x.Rhs, topLevel)

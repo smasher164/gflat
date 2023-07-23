@@ -54,7 +54,7 @@ func (c *Checker) GetEnv(x ast.Node) (*Env, bool) {
 }
 
 func (c *Checker) GetType(x ast.Node) Type {
-	return c.typeOf[x]
+	return c.get(c.typeOf[x])
 }
 
 func (c *Checker) ProcessBuild() error {
@@ -245,24 +245,26 @@ func (c *Checker) unify(a, b Type) {
 	}
 	if aTV, ok := a.(TypeVar); ok {
 		// TODO: occurs check
-		if aTV.Ref.Bound {
-			if c.simpleEquals(aTV.Ref.Type, b) {
-				return
-			}
-			panic(fmt.Sprintf("bound metavar %s does not match %s", aTV.Ref.ID.TypeArg.Data, b))
-		}
+		// i think this is redundant
+		// if aTV.Ref.Bound {
+		// 	if c.simpleEquals(aTV.Ref.Type, b) {
+		// 		return
+		// 	}
+		// 	panic(fmt.Sprintf("bound metavar %s does not match %s", aTV.Ref.ID.TypeArg.Data, b))
+		// }
 		aTV.Ref.Bound = true
 		aTV.Ref.Type = b
 		return
 	}
 	if bTV, ok := b.(TypeVar); ok {
 		// TODO: occurs check
-		if bTV.Ref.Bound {
-			if c.simpleEquals(bTV.Ref.Type, a) {
-				return
-			}
-			panic(fmt.Sprintf("bound metavar %s does not match %s", bTV.Ref.ID.TypeArg.Data, a))
-		}
+		// i think this is redundant
+		// if bTV.Ref.Bound {
+		// 	if c.simpleEquals(bTV.Ref.Type, a) {
+		// 		return
+		// 	}
+		// 	panic(fmt.Sprintf("bound metavar %s does not match %s", bTV.Ref.ID.TypeArg.Data, a))
+		// }
 		bTV.Ref.Bound = true
 		bTV.Ref.Type = a
 		return
