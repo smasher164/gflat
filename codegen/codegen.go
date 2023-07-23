@@ -23,6 +23,8 @@ package/subpackage -> package/subpackage
 don't rely on concurrent writes right now, until the in-memory fs can be made thread-safe
 */
 
+const formatSource = true
+
 type Codegen struct {
 	// assumes we have a resolved and typed build
 	importer *parser.Importer
@@ -73,28 +75,31 @@ func (c *Codegen) codegen(outfs fs.FS, x ast.Node) {
 		if err != nil {
 			panic(err) // handle error
 		}
-		defer func() {
-			if err := f.Close(); err != nil {
-				panic(err) // handle error
-			}
-			b, err := fs.ReadFile(outfs, filename)
-			if err != nil {
-				panic(err) // handle error
-			}
-			b, err = format.Source(b)
-			if err != nil {
-				panic(err) // handle error
-			}
-			f, err := fsx.Create(outfs, filename)
-			if err != nil {
-				panic(err) // handle error
-			}
+		if formatSource {
+			defer func() {
+				if err := f.Close(); err != nil {
+					panic(err) // handle error
+				}
+				b, err := fs.ReadFile(outfs, filename)
+				if err != nil {
+					panic(err) // handle error
+				}
+				b, err = format.Source(b)
+				if err != nil {
+					panic(err) // handle error
+				}
+				f, err := fsx.Create(outfs, filename)
+				if err != nil {
+					panic(err) // handle error
+				}
+				defer f.Close()
+				if _, err := f.Write(b); err != nil {
+					panic(err) // handle error
+				}
+			}()
+		} else {
 			defer f.Close()
-			if _, err := f.Write(b); err != nil {
-				panic(err) // handle error
-			}
-		}()
-		// defer f.Close()
+		}
 		if x.PackageName != nil {
 			fmt.Fprintf(f, "package %s\n\n", x.PackageName.Name.Data)
 		} else {
@@ -139,6 +144,8 @@ func (c *Codegen) codegenExpr(f fsx.WriteableFile, x ast.Node, topLevel bool) []
 			if i == len(x.Body)-1 {
 				if _, isStmt := elem.(*ast.Stmt); !isStmt {
 					fmt.Fprintf(f, "%s = %s\n", tmp, vars[0])
+				} else {
+					fmt.Fprintf(f, "%s = struct{}{}\n", tmp) // is this necessary?
 				}
 			}
 		}
@@ -231,6 +238,24 @@ func (c *Codegen) codegenExpr(f fsx.WriteableFile, x ast.Node, topLevel bool) []
 			fmt.Fprintf(f, "}()\n")
 		}
 		return []string{ifvar}
+	case *ast.If:
+		cvar := c.codegenExpr(f, x.IfHeader.Cond, topLevel)
+		tif := c.checker.GetType(x)
+		goTIf := typeString(tif) // this is just unit
+		ifvar := c.checker.FreshName().Name.Data
+		fmt.Fprintf(f, "var %s %s\n", ifvar, goTIf)
+		if topLevel {
+			fmt.Fprintf(f, "var _ struct{} = func() struct{} {\n")
+		}
+		fmt.Fprintf(f, "if %s {\n", cvar[0])
+		bodyVar := c.codegenExpr(f, x.Body, false)
+		fmt.Fprintf(f, "%s = %s\n", ifvar, bodyVar[0])
+		fmt.Fprintf(f, "}\n")
+		if topLevel {
+			fmt.Fprintf(f, "return struct{}{}\n")
+			fmt.Fprintf(f, "}()\n")
+		}
+		return []string{ifvar}
 	case *ast.Tuple:
 		// Just handling the 1-tuple with no trailing comma case for now
 		var expr ast.Node
@@ -305,6 +330,10 @@ func typeString(t types2.Type) string {
 	case types2.TypeVar:
 		if t.Ref.Bound {
 			return typeString(t.Ref.Type)
+		}
+	case types2.Tuple:
+		if len(t.Fields) == 0 {
+			return "struct{}"
 		}
 	}
 	panic(fmt.Sprintf("TODO: typeString: %T", t))

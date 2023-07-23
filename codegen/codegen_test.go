@@ -14,42 +14,61 @@ import (
 
 func Test(t *testing.T) {
 	fsys := fsx.TestFS([][2]string{
-		{"a/test1.gf", `
+		{"a/test01.gf", `
 		package a
 
 		let x : int = 1 + 2 + 3
 		`},
-		{"a/test2.gf", `
+		{"a/test02.gf", `
 		package a
 
 		let x : int = { 1 }
 		`},
-		{"a/test3.gf", `
+		{"a/test03.gf", `
 		package a
 
 		let x = 1 + 2 + 3
 		`},
-		{"a/test4.gf", `
+		{"a/test04.gf", `
 		package a
 
 		let x = "hello " + "world"
 		`},
-		{"a/test5.gf", `
+		{"a/test05.gf", `
 		package a
 
 		let x = 1 < 2
 		`},
-		{"a/test6.gf", `
+		{"a/test06.gf", `
 		package a
 
 		let x = true && false
 		`},
-		{"a/test7.gf", `
+		{"a/test07.gf", `
 		package a
 
 		let x = if (true) 1 else 2
 		`},
-		// {"a/test8.gf", `
+		{"a/test08.gf", `
+		package a
+
+		let x = {
+			if (true) 1 else 2
+		}
+		`},
+		{"a/test09.gf", `
+		package a
+
+		let x = if (true) { 1 } else { 2 }
+		`},
+		{"a/test10.gf", `
+		package a
+
+		let x = if (true) {
+			1;
+		}
+		`},
+		// {"a/test9.gf", `
 		// package a
 
 		// let x = {

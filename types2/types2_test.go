@@ -14,8 +14,10 @@ func TestInferExpression(t *testing.T) {
 		{"a/test.gf", `
 		package a
 
-		let x = if (true) 1 else 2
-	`},
+		let x = if (true) {
+			1;
+		}
+		`},
 	})
 	importer := parser.NewImporter(fsys)
 	if err := importer.ImportCrawl("a", ""); err != nil {

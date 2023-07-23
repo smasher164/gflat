@@ -83,13 +83,18 @@ func (c *Checker) infer(x ast.Node) {
 		c.infer(x.Body)
 	case *ast.Block:
 		var lastType Type = Unit
-		for _, elem := range x.Body {
+		for i, elem := range x.Body {
 			c.infer(elem)
-			if t, ok := c.typeOf[elem]; ok {
-				lastType = t
+			if i == len(x.Body)-1 { // we don't need to check the previous elements
+				if t, ok := c.typeOf[elem]; ok {
+					lastType = t
+				}
 			}
 		}
 		c.typeOf[x] = lastType
+	case *ast.Stmt:
+		c.infer(x.Stmt)
+		// c.typeOf[x] = Unit // I don't think statements have types
 	case *ast.LetDecl:
 		// get partial type annotation from destructure
 		c.infer(x.Destructure)
@@ -160,6 +165,10 @@ func (c *Checker) infer(x ast.Node) {
 		c.infer(x.Body)
 		c.check(x.ElseBody, c.typeOf[x.Body])
 		c.typeOf[x] = c.typeOf[x.Body]
+	case *ast.If:
+		c.check(x.IfHeader, Bool)
+		c.check(x.Body, Unit)
+		c.typeOf[x] = Unit
 	case *ast.IfHeader:
 		c.infer(x.Cond)
 		c.typeOf[x] = c.typeOf[x.Cond]
@@ -258,7 +267,19 @@ func (c *Checker) unify(a, b Type) {
 		bTV.Ref.Type = a
 		return
 	}
-	panic(fmt.Sprintf("TODO: unify %v %v", a, b))
+	if tup1, ok := a.(Tuple); ok {
+		if tup2, ok := b.(Tuple); ok {
+			if len(tup1.Fields) != len(tup2.Fields) {
+				panic("tuple length mismatch")
+			}
+			for i := range tup1.Fields {
+				// TODO: deal with labels
+				c.unify(tup1.Fields[i].Type, tup2.Fields[i].Type)
+			}
+			return
+		}
+	}
+	panic(fmt.Sprintf("TODO: unify %#v %#v", a, b))
 }
 
 // type packageResolver struct {
@@ -276,6 +297,9 @@ func (c *Checker) resolve(env *Env, x ast.Node) {
 	case *ast.File:
 		// script
 		c.resolve(env, x.Body)
+		c.envOf[x] = env
+	case *ast.Stmt:
+		c.resolve(env, x.Stmt)
 		c.envOf[x] = env
 	case *ast.Number:
 		c.envOf[x] = env
@@ -301,6 +325,10 @@ func (c *Checker) resolve(env *Env, x ast.Node) {
 		c.resolve(env, x.IfHeader)
 		c.resolve(env, x.Body)
 		c.resolve(env, x.ElseBody)
+		c.envOf[x] = env
+	case *ast.If:
+		c.resolve(env, x.IfHeader)
+		c.resolve(env, x.Body)
 		c.envOf[x] = env
 	case *ast.IfHeader:
 		c.resolve(env, x.Cond)
