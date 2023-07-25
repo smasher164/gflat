@@ -11,12 +11,68 @@ import (
 
 func TestInferExpression(t *testing.T) {
 	fsys := fsx.TestFS([][2]string{
-		{"a/test.gf", `
+		{"a/test01.gf", `
 		package a
 
-		let x = if (true) {
+		let a : int = 1 + 2 + 3
+		`},
+		{"a/test02.gf", `
+		package a
+
+		let b : int = { 1 }
+		`},
+		{"a/test03.gf", `
+		package a
+
+		let c = 1 + 2 + 3
+		`},
+		{"a/test04.gf", `
+		package a
+
+		let d = "hello " + "world"
+		`},
+		{"a/test05.gf", `
+		package a
+
+		let e = 1 < 2
+		`},
+		{"a/test06.gf", `
+		package a
+
+		let f = true && false
+		`},
+		{"a/test07.gf", `
+		package a
+
+		let g = if (true) 1 else 2
+		`},
+		{"a/test08.gf", `
+		package a
+
+		let h = {
+			if (true) 1 else 2
+		}
+		`},
+		{"a/test09.gf", `
+		package a
+
+		let i = if (true) { 1 } else { 2 }
+		`},
+		{"a/test10.gf", `
+		package a
+
+		let j = if (true) {
 			1;
 		}
+		`},
+		{"a/test11.gf", `
+		package a
+
+		type foo = int
+		type bar = int
+
+		let k : foo = 0
+		let l : bar = 1
 		`},
 	})
 	importer := parser.NewImporter(fsys)

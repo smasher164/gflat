@@ -76,7 +76,8 @@ type PackageBind struct {
 func (PackageBind) isBind() {}
 
 type TypeBind struct {
-	Def ast.Node
+	Def         ast.Node
+	ReifiedType Type
 }
 
 func (TypeBind) isBind() {}

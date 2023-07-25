@@ -17,56 +17,65 @@ func Test(t *testing.T) {
 		{"a/test01.gf", `
 		package a
 
-		let x : int = 1 + 2 + 3
+		let a : int = 1 + 2 + 3
 		`},
 		{"a/test02.gf", `
 		package a
 
-		let x : int = { 1 }
+		let b : int = { 1 }
 		`},
 		{"a/test03.gf", `
 		package a
 
-		let x = 1 + 2 + 3
+		let c = 1 + 2 + 3
 		`},
 		{"a/test04.gf", `
 		package a
 
-		let x = "hello " + "world"
+		let d = "hello " + "world"
 		`},
 		{"a/test05.gf", `
 		package a
 
-		let x = 1 < 2
+		let e = 1 < 2
 		`},
 		{"a/test06.gf", `
 		package a
 
-		let x = true && false
+		let f = true && false
 		`},
 		{"a/test07.gf", `
 		package a
 
-		let x = if (true) 1 else 2
+		let g = if (true) 1 else 2
 		`},
 		{"a/test08.gf", `
 		package a
 
-		let x = {
+		let h = {
 			if (true) 1 else 2
 		}
 		`},
 		{"a/test09.gf", `
 		package a
 
-		let x = if (true) { 1 } else { 2 }
+		let i = if (true) { 1 } else { 2 }
 		`},
 		{"a/test10.gf", `
 		package a
 
-		let x = if (true) {
+		let j = if (true) {
 			1;
 		}
+		`},
+		{"a/test11.gf", `
+		package a
+
+		type foo = int
+		type bar = int
+
+		let k : foo = 0
+		let l : bar = 1
 		`},
 		// {"a/test9.gf", `
 		// package a

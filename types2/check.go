@@ -67,6 +67,8 @@ func (c *Checker) ProcessBuild() error {
 	return c.err
 }
 
+// should infer handle type declarations?
+// should its type be associated in typeOf?
 func (c *Checker) infer(x ast.Node) {
 	if _, ok := c.typeOf[x]; ok {
 		return
@@ -108,18 +110,31 @@ func (c *Checker) infer(x ast.Node) {
 	case *ast.TypeAnnotation:
 		tann := c.reifyType(x.Type)
 		c.typeOf[x.Destructure] = tann
+		e := c.envOf[x.Destructure]
+		if id, ok := x.Destructure.(*ast.Ident); ok {
+			if b, ok := e.symbols[id.Name.Data]; ok {
+				if vb, ok := b.(VarBind); ok {
+					if vb.Type == nil {
+						e.symbols[id.Name.Data] = VarBind{tann}
+					}
+				}
+			}
+		}
 		c.typeOf[x] = tann
 	case *ast.Ident:
 		// look up in environment
 		// get its type
-		if b, _, ok := c.envOf[x].LookupStack(x.Name.Data); ok {
+		e := c.envOf[x]
+		if b, _, ok := e.LookupStack(x.Name.Data); ok {
 			if b, ok := b.(VarBind); ok && b.Type != nil {
 				c.typeOf[x] = b.Type
 				break
 			}
 		}
+		// is this okay for regular vars that are used?
 		fresh := c.FreshTypeVar()
-		c.typeOf[x] = NewTypeVar(fresh)
+		tx := NewTypeVar(fresh)
+		c.typeOf[x] = tx
 	case *ast.Number:
 		c.typeOf[x] = Int
 	case *ast.BasicString:
@@ -185,6 +200,15 @@ func (c *Checker) infer(x ast.Node) {
 				}
 			}
 		}
+		// case *ast.TypeDecl:
+		// 	// ignore type params and with constraints
+		// 	e := c.envOf[x]
+		// 	switch t := x.Body.(type) {
+		// 	case *ast.Ident:
+		// 		// we've already resolved this ident during name resolution
+		// 		// so now we just have to make sure it's *also* a type name.
+		// 		t.
+		// 	}
 	}
 }
 
@@ -200,20 +224,29 @@ func (c *Checker) reifyType(t ast.Node) Type {
 	switch t := t.(type) {
 	case *ast.Ident:
 		if env, ok := c.GetEnv(t); ok {
-			if bind, _, ok := env.LookupStack(t.Name.Data); ok {
+			if bind, e, ok := env.LookupStack(t.Name.Data); ok {
 				if tbind, ok := bind.(BaseTypeBind); ok {
 					return tbind.Type
 				}
 				if tbind, ok := bind.(TypeBind); ok {
-					return Named{
-						Name: t,
-						Type: c.reifyType(tbind.Def),
-					}
+					rt := c.reifyType(tbind.Def) // woot woot
+					tbind.ReifiedType = rt
+					e.symbols[t.Name.Data] = tbind
+					return rt
+					// return Named{
+					// 	Name: t,
+					// 	Type: c.reifyType(tbind.Def),
+					// }
 				}
 			}
 		}
+	case *ast.TypeDecl:
+		return Named{
+			Name: t.Name,
+			Type: c.reifyType(t.Body), // this would probably break down with recursive types
+		}
 	}
-	panic("TODO: reifyType")
+	panic(fmt.Sprintf("TODO: reifyType %T", t))
 }
 
 func (c *Checker) get(t Type) Type {
@@ -232,7 +265,7 @@ func (c *Checker) simpleEquals(a, b Type) bool {
 	if a, ok := a.(Named); ok {
 		if b, ok := b.(Named); ok {
 			// this doesn't work for type aliases, if we add them
-			return a.Name == b.Name
+			return a.Name.Name.Data == b.Name.Name.Data
 		}
 	}
 	return false
@@ -269,19 +302,39 @@ func (c *Checker) unify(a, b Type) {
 		bTV.Ref.Type = a
 		return
 	}
+	// TODO: hold off until we understand subtyping and structural typing.
+	if nom, ok := a.(Named); ok {
+		if _, ok := b.(Named); !ok {
+			c.unify(nom.Type, b)
+			return
+		}
+	} else if nom, ok := b.(Named); ok {
+		c.unify(a, nom.Type)
+		return
+	}
 	if tup1, ok := a.(Tuple); ok {
 		if tup2, ok := b.(Tuple); ok {
 			if len(tup1.Fields) != len(tup2.Fields) {
 				panic("tuple length mismatch")
 			}
 			for i := range tup1.Fields {
-				// TODO: deal with labels
-				c.unify(tup1.Fields[i].Type, tup2.Fields[i].Type)
+				f1 := tup1.Fields[i]
+				f2 := tup2.Fields[i]
+				if f1.Name != nil && f2.Name != nil {
+					if f1.Name.Name.Data != f2.Name.Name.Data {
+						panic("tuple field name mismatch")
+					}
+					c.unify(tup1.Fields[i].Type, tup2.Fields[i].Type)
+				} else if f1.Name == nil && f2.Name == nil {
+					c.unify(tup1.Fields[i].Type, tup2.Fields[i].Type)
+				} else {
+					panic("tuple field name mismatch")
+				}
 			}
 			return
 		}
 	}
-	panic(fmt.Sprintf("TODO: unify %#v %#v", a, b))
+	panic(fmt.Sprintf("TODO: unify %s %s", a, b))
 }
 
 // type packageResolver struct {
@@ -414,9 +467,7 @@ func (c *Checker) FreshTypeVar() *ast.TypeArg {
 }
 
 func (c *Checker) defineFun(packageScope, curr *Env, fname string, x ast.Node) {
-	if f, ok := c.fileOf[fname]; ok && f == curr {
-		panic("name collision")
-	}
+	c.checkTopLevelCollision(curr, fname)
 	switch x := x.(type) {
 	case *ast.LetFunction:
 		// TODO: type parameters and type constraints
@@ -432,7 +483,33 @@ func (c *Checker) defineFun(packageScope, curr *Env, fname string, x ast.Node) {
 	}
 }
 
-func (c *Checker) resolveTypeAnnotation(curr *Env, T ast.Node) {
+func (c *Checker) checkTopLevelCollision(fileScope *Env, name string) {
+	if f, ok := c.fileOf[name]; ok && f == fileScope {
+		panic("name collision")
+	}
+	if _, ok := fileScope.parent.LookupLocal(name); ok {
+		panic("name collision")
+	}
+}
+
+func (c *Checker) defineLet(packageScope, curr *Env, des ast.Node) {
+	switch des := des.(type) {
+	case *ast.Ident:
+		c.checkTopLevelCollision(curr, des.Name.Data)
+		bind := VarBind{}
+		c.AddSymbol(packageScope, des.Name.Data, bind)
+		c.envOf[des] = packageScope
+		c.fileOf[des.Name.Data] = curr
+	case *ast.TypeAnnotation:
+		c.defineLet(packageScope, curr, des.Destructure)
+		c.resolveTypeAnnotation(curr, des.Type)
+		c.envOf[des] = packageScope
+	case *ast.Tuple:
+		panic("TODO: tuple")
+	}
+}
+
+func (c *Checker) resolveTypeBody(curr *Env, T ast.Node) {
 	switch T := T.(type) {
 	case *ast.Ident:
 		if _, _, ok := curr.LookupStack(T.Name.Data); ok {
@@ -446,22 +523,29 @@ func (c *Checker) resolveTypeAnnotation(curr *Env, T ast.Node) {
 	c.envOf[T] = curr
 }
 
-func (c *Checker) defineLet(packageScope, curr *Env, des ast.Node) {
-	switch des := des.(type) {
-	case *ast.Ident:
-		if f, ok := c.fileOf[des.Name.Data]; ok && f == curr {
-			panic("name collision")
-		}
-		bind := VarBind{}
-		c.AddSymbol(packageScope, des.Name.Data, bind)
-		c.envOf[des] = packageScope
-		c.fileOf[des.Name.Data] = curr
-	case *ast.TypeAnnotation:
-		c.defineLet(packageScope, curr, des.Destructure)
-		c.resolveTypeAnnotation(curr, des.Type)
-	case *ast.Tuple:
-		panic("TODO: tuple")
-	}
+func (c *Checker) resolveTypeAnnotation(curr *Env, T ast.Node) {
+	c.resolveTypeBody(curr, T)
+	// switch T := T.(type) {
+	// case *ast.Ident:
+	// 	if _, _, ok := curr.LookupStack(T.Name.Data); ok {
+	// 		// TODO: check that it's a type binding
+	// 	} else {
+	// 		c.AddSymbol(curr, T.Name.Data, Unresolved{})
+	// 	}
+	// default:
+	// 	panic("TODO")
+	// }
+	// c.envOf[T] = curr
+}
+
+func (c *Checker) defineType(packageScope, curr *Env, typeDecl *ast.TypeDecl) {
+	tname := typeDecl.Name.Name.Data
+	c.checkTopLevelCollision(curr, tname)
+	// ignore type parameters and constraints for now
+	bind := TypeBind{Def: typeDecl}
+	c.AddSymbol(packageScope, tname, bind)
+	bodyScope := curr.AddScope()
+	c.resolveTypeBody(bodyScope, typeDecl.Body)
 }
 
 func (c *Checker) resolveTopLevelDecl(packageScope, curr *Env, x ast.Node) {
@@ -474,7 +558,10 @@ func (c *Checker) resolveTopLevelDecl(packageScope, curr *Env, x ast.Node) {
 			c.envOf[x] = packageScope // TODO: remember this later during freshname generation in codegen.
 		}
 	case *ast.TypeDecl:
-		panic("TODO: TypeDecl")
+		tname := x.Name.Name.Data
+		c.defineType(packageScope, curr, x)
+		c.fileOf[tname] = curr
+		c.envOf[x] = packageScope
 		// tname := x.Name.Name.Data
 		// c.defineType(packageScope, x)
 		// c.fileOf[tname] = curr
@@ -513,14 +600,17 @@ func (c *Checker) defineImport(packageScope, curr *Env, x ast.Node) {
 		}
 		c.envOf[x] = curr
 	case *ast.ImportDeclPackage:
-		importPath := x.Path.Lit.Data
+		importPath, err := strconv.Unquote(x.Path.Lit.Data)
+		if err != nil {
+			panic("not a valid import path")
+		}
 		pkg, ok := c.importer.PkgCache[importPath]
 		if !ok {
-			panic("imported package not found in cache")
+			panic(fmt.Sprintf("imported package %s not found in cache", importPath))
 		}
 		bind := PackageBind{pkg}
 		if x.Binding == nil {
-			if prefix, _, ok := module.SplitPathVersion(x.Path.Lit.Data); ok {
+			if prefix, _, ok := module.SplitPathVersion(importPath); ok {
 				id := path.Base(prefix)
 				// check if it's from the same file
 				if f, ok := c.fileOf[id]; ok && f == curr {

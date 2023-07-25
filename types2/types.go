@@ -97,7 +97,7 @@ var BaseMap = map[string]Base{
 
 type refTypeArg = struct {
 	Bound bool
-	ID    *ast.TypeArg // should this be an *ast.TypeArg?
+	ID    *ast.TypeArg
 	Type  Type
 }
 

@@ -164,18 +164,39 @@ func (c *Codegen) codegenExpr(f fsx.WriteableFile, x ast.Node, topLevel bool) []
 		fmt.Fprintf(f, "_ = %s\n", vars[0])
 		return []string{"_"}
 	case *ast.LetDecl:
-		vars := c.codegenExpr(f, x.Rhs, topLevel)
+		var rhs string
+		switch r := x.Rhs.(type) {
+		case *ast.Number:
+			rhs = r.Lit.Data
+		case *ast.BasicString:
+			rhs = r.Lit.Data
+		default:
+			rhs = c.codegenExpr(f, x.Rhs, topLevel)[0]
+		}
 		tlet := c.checker.GetType(x.Destructure)
 		goTLet := typeString(tlet)
 		switch des := x.Destructure.(type) {
 		case *ast.Ident:
-			fmt.Fprintf(f, "var %s %s = %s\n", des.Name.Data, goTLet, vars[0])
+			fmt.Fprintf(f, "var %s %s = %s\n", des.Name.Data, goTLet, rhs)
 		case *ast.TypeAnnotation:
 			if varname, ok := des.Destructure.(*ast.Ident); ok {
-				fmt.Fprintf(f, "var %s %s = %s\n", varname.Name.Data, goTLet, vars[0])
+				fmt.Fprintf(f, "var %s %s = %s\n", varname.Name.Data, goTLet, rhs)
 			}
 		}
 		return []string{"_"}
+	case *ast.TypeDecl:
+		tname := x.Name.Name.Data
+		if e, ok := c.checker.GetEnv(x); ok {
+			if b, ok := e.LookupLocal(tname); ok {
+				if b, ok := b.(types2.TypeBind); ok {
+					if t, ok := b.ReifiedType.(types2.Named); ok {
+						fmt.Fprintf(f, "type %s %s\n", tname, typeString(t.Type))
+						return nil
+					}
+				}
+			}
+		}
+		panic("unreachable")
 	case *ast.PrefixExpr:
 		expr := c.codegenExpr(f, x.X, topLevel)[0]
 		tprefix := c.checker.GetType(x)
