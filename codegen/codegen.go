@@ -5,6 +5,7 @@ import (
 	"go/format"
 	"io/fs"
 	"os"
+	"strings"
 
 	"github.com/smasher164/gflat/ast"
 	"github.com/smasher164/gflat/fsx"
@@ -186,16 +187,21 @@ func (c *Codegen) codegenExpr(f fsx.WriteableFile, x ast.Node, topLevel bool) []
 		return []string{"_"}
 	case *ast.TypeDecl:
 		tname := x.Name.Name.Data
-		if e, ok := c.checker.GetEnv(x); ok {
-			if b, ok := e.LookupLocal(tname); ok {
-				if b, ok := b.(types2.TypeBind); ok {
-					if t, ok := b.ReifiedType.(types2.Named); ok {
-						fmt.Fprintf(f, "type %s %s\n", tname, typeString(t.Type))
-						return nil
-					}
-				}
-			}
+		t := c.checker.GetType(x)
+		if t, ok := t.(types2.Named); ok {
+			fmt.Fprintf(f, "type %s %s\n", tname, typeString(t.Type))
+			return nil
 		}
+		// if e, ok := c.checker.GetEnv(x); ok {
+		// 	if b, ok := e.LookupLocal(tname); ok {
+		// 		if b, ok := b.(types2.TypeBind); ok {
+		// 			if t, ok := b.ReifiedType.(types2.Named); ok {
+		// 				fmt.Fprintf(f, "type %s %s\n", tname, typeString(t.Type))
+		// 				return nil
+		// 			}
+		// 		}
+		// 	}
+		// }
 		panic("unreachable")
 	case *ast.PrefixExpr:
 		expr := c.codegenExpr(f, x.X, topLevel)[0]
@@ -278,20 +284,39 @@ func (c *Codegen) codegenExpr(f fsx.WriteableFile, x ast.Node, topLevel bool) []
 			fmt.Fprintf(f, "}()\n")
 		}
 		return []string{ifvar}
+	case *ast.CommaElement:
+		return c.codegenExpr(f, x.X, topLevel)
 	case *ast.Tuple:
 		// Just handling the 1-tuple with no trailing comma case for now
-		var expr ast.Node
 		if len(x.Elements) == 1 {
 			if elem, ok := x.Elements[0].(*ast.CommaElement); ok {
 				if elem.Comma.Type != lexer.Comma {
-					expr = elem.X
+					return c.codegenExpr(f, elem.X, topLevel)
 				}
 			}
 		}
-		if expr == nil {
-			panic("codegen: unhandled tuple")
+		var vars []string
+		for _, elem := range x.Elements {
+			vars = append(vars, c.codegenExpr(f, elem, topLevel)...)
 		}
-		return c.codegenExpr(f, expr, topLevel)
+		if len(vars) != len(x.Elements) {
+			panic("unequal number of elements")
+		}
+		nvar := c.checker.FreshName()
+		tstr := typeString(c.checker.GetType(x))
+		fmt.Fprintf(f, "var %s = %s{", nvar.Name.Data, tstr)
+		for _, v := range vars {
+			fmt.Fprintf(f, "%s,", v)
+		}
+		fmt.Fprint(f, "}\n")
+		return []string{nvar.Name.Data}
+
+		// this is probably context-dependent
+		// panic("codegen: unhandled tuple")
+		// if expr == nil {
+		// 	panic("codegen: unhandled tuple")
+		// }
+		// return c.codegenExpr(f, expr, topLevel)
 	}
 	panic(fmt.Sprintf("unhandled node: %T", x))
 }
@@ -354,9 +379,14 @@ func typeString(t types2.Type) string {
 			return typeString(t.Ref.Type)
 		}
 	case types2.Tuple:
-		if len(t.Fields) == 0 {
-			return "struct{}"
+		buf := new(strings.Builder)
+		buf.WriteString("struct{")
+		for i, f := range t.Fields {
+			// TODO: f.Name
+			fmt.Fprintf(buf, "F%d %s;", i, typeString(f.Type))
 		}
+		buf.WriteByte('}')
+		return buf.String()
 	}
 	panic(fmt.Sprintf("TODO: typeString: %T", t))
 }

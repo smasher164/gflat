@@ -10,7 +10,7 @@ import (
 	"golang.org/x/exp/maps"
 )
 
-const debug = true
+const debug = false
 
 type parser struct {
 	shouldInsertAfter  bool

@@ -74,6 +74,23 @@ func TestInferExpression(t *testing.T) {
 		let k : foo = 0
 		let l : bar = 1
 		`},
+		{"a/test12.gf", `
+		package a
+
+		let m : int = 0
+		let n = m
+		`},
+		{"a/test13.gf", `
+		package a
+
+		let o : (int, int) = (0, 0)
+		`},
+		{"a/test14.gf", `
+		package a
+
+		type Foo = (int, int)
+		let p : Foo = (0, 0)
+		`},
 	})
 	importer := parser.NewImporter(fsys)
 	if err := importer.ImportCrawl("a", ""); err != nil {

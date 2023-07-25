@@ -56,7 +56,7 @@ type Bind interface {
 }
 
 type VarBind struct {
-	Type Type
+	Def ast.Node
 }
 
 func (VarBind) isBind() {}
@@ -76,8 +76,8 @@ type PackageBind struct {
 func (PackageBind) isBind() {}
 
 type TypeBind struct {
-	Def         ast.Node
-	ReifiedType Type
+	Def ast.Node
+	// ReifiedType Type
 }
 
 func (TypeBind) isBind() {}
@@ -92,3 +92,9 @@ type BaseTypeBind struct {
 }
 
 func (BaseTypeBind) isBind() {}
+
+type BaseVarBind struct {
+	Type Type
+}
+
+func (BaseVarBind) isBind() {}

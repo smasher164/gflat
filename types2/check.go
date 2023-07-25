@@ -38,8 +38,8 @@ func NewChecker(importer *parser.Importer) *Checker {
 	for name, ty := range BaseMap {
 		c.AddSymbol(universe, name, BaseTypeBind{ty})
 	}
-	c.AddSymbol(universe, "true", VarBind{Bool})
-	c.AddSymbol(universe, "false", VarBind{Bool})
+	c.AddSymbol(universe, "true", BaseVarBind{Bool})
+	c.AddSymbol(universe, "false", BaseVarBind{Bool})
 	c.universe = universe
 	return c
 }
@@ -100,6 +100,8 @@ func (c *Checker) infer(x ast.Node) {
 	case *ast.LetDecl:
 		// get partial type annotation from destructure
 		c.infer(x.Destructure)
+		tdes := c.typeOf[x.Destructure]
+		_ = tdes
 		c.infer(x.Rhs)
 		trhs := c.typeOf[x.Rhs]
 		c.unify(c.typeOf[x.Destructure], trhs)
@@ -110,25 +112,31 @@ func (c *Checker) infer(x ast.Node) {
 	case *ast.TypeAnnotation:
 		tann := c.reifyType(x.Type)
 		c.typeOf[x.Destructure] = tann
-		e := c.envOf[x.Destructure]
-		if id, ok := x.Destructure.(*ast.Ident); ok {
-			if b, ok := e.symbols[id.Name.Data]; ok {
-				if vb, ok := b.(VarBind); ok {
-					if vb.Type == nil {
-						e.symbols[id.Name.Data] = VarBind{tann}
-					}
-				}
-			}
-		}
+		// e := c.envOf[x.Destructure]
+		// if id, ok := x.Destructure.(*ast.Ident); ok {
+		// 	if b, ok := e.symbols[id.Name.Data]; ok {
+		// 		if vb, ok := b.(VarBind); ok {
+		// 			if vb.Type == nil {
+		// 				e.symbols[id.Name.Data] = VarBind{tann}
+		// 			}
+		// 		}
+		// 	}
+		// }
 		c.typeOf[x] = tann
 	case *ast.Ident:
 		// look up in environment
 		// get its type
 		e := c.envOf[x]
 		if b, _, ok := e.LookupStack(x.Name.Data); ok {
-			if b, ok := b.(VarBind); ok && b.Type != nil {
+			if b, ok := b.(BaseVarBind); ok {
 				c.typeOf[x] = b.Type
 				break
+			}
+			if b, ok := b.(VarBind); ok {
+				if t, ok := c.typeOf[b.Def]; ok {
+					c.typeOf[x] = t
+					break
+				}
 			}
 		}
 		// is this okay for regular vars that are used?
@@ -197,18 +205,27 @@ func (c *Checker) infer(x ast.Node) {
 					c.infer(elem.X)
 					c.typeOf[elem] = c.typeOf[elem.X]
 					c.typeOf[x] = c.typeOf[elem.X]
+					break
 				}
 			}
 		}
-		// case *ast.TypeDecl:
-		// 	// ignore type params and with constraints
-		// 	e := c.envOf[x]
-		// 	switch t := x.Body.(type) {
-		// 	case *ast.Ident:
-		// 		// we've already resolved this ident during name resolution
-		// 		// so now we just have to make sure it's *also* a type name.
-		// 		t.
-		// 	}
+		fields := make([]Field, len(x.Elements))
+		for i, elem := range x.Elements {
+			c.infer(elem)
+			fields[i] = Field{
+				// TODO: Name
+				Type: c.typeOf[elem],
+			}
+		}
+		c.typeOf[x] = Tuple{fields}
+	case *ast.CommaElement:
+		c.infer(x.X)
+		c.typeOf[x] = c.typeOf[x.X]
+	case *ast.TypeDecl:
+		c.typeOf[x] = Named{
+			Name: x.Name,
+			Type: c.reifyType(x.Body), // this would probably break down with recursive types
+		}
 	}
 }
 
@@ -224,14 +241,14 @@ func (c *Checker) reifyType(t ast.Node) Type {
 	switch t := t.(type) {
 	case *ast.Ident:
 		if env, ok := c.GetEnv(t); ok {
-			if bind, e, ok := env.LookupStack(t.Name.Data); ok {
+			if bind, _, ok := env.LookupStack(t.Name.Data); ok {
 				if tbind, ok := bind.(BaseTypeBind); ok {
 					return tbind.Type
 				}
 				if tbind, ok := bind.(TypeBind); ok {
 					rt := c.reifyType(tbind.Def) // woot woot
-					tbind.ReifiedType = rt
-					e.symbols[t.Name.Data] = tbind
+					// tbind.ReifiedType = rt
+					// e.symbols[t.Name.Data] = tbind
 					return rt
 					// return Named{
 					// 	Name: t,
@@ -240,11 +257,21 @@ func (c *Checker) reifyType(t ast.Node) Type {
 				}
 			}
 		}
-	case *ast.TypeDecl:
-		return Named{
-			Name: t.Name,
-			Type: c.reifyType(t.Body), // this would probably break down with recursive types
+	case *ast.Tuple:
+		fields := make([]Field, len(t.Elements))
+		for i, elem := range t.Elements {
+			fields[i] = Field{
+				// TODO: Name
+				Type: c.reifyType(elem),
+			}
 		}
+		// should we add this to typeof?
+		return Tuple{fields}
+	case *ast.CommaElement:
+		return c.reifyType(t.X)
+	case *ast.TypeDecl:
+		c.infer(t)
+		return c.typeOf[t]
 	}
 	panic(fmt.Sprintf("TODO: reifyType %T", t))
 }
@@ -375,6 +402,10 @@ func (c *Checker) resolve(env *Env, x ast.Node) {
 		c.envOf[x] = blockScope
 	case *ast.Ident:
 		// TODO: what do we do here?
+		// c.AddSymbol(curr, x.Name.Data, Unresolved{})
+		if _, _, ok := env.LookupStack(x.Name.Data); !ok {
+			c.AddSymbol(env, x.Name.Data, Unresolved{})
+		}
 		c.envOf[x] = env
 	case *ast.IfElse:
 		c.resolve(env, x.IfHeader)
@@ -418,7 +449,7 @@ func (c *Checker) resolveSignature(env *Env, sig *ast.FunctionSignature) {
 		c.envOf[sig.Param] = env
 		c.envOf[param.Destructure] = env
 		paramName := param.Destructure.(*ast.Ident)
-		paramBind := VarBind{} // stick type in here?
+		paramBind := VarBind{Def: paramName} // stick type in here?
 		c.AddSymbol(env, paramName.Name.Data, paramBind)
 		c.resolveTypeAnnotation(env, param.Type)
 		// TODO: ignoring param type for now
@@ -473,7 +504,7 @@ func (c *Checker) defineFun(packageScope, curr *Env, fname string, x ast.Node) {
 		// TODO: type parameters and type constraints
 		// TODO: forward declaration and mutual declarations
 		// process signature and body
-		bind := VarBind{}
+		bind := VarBind{Def: x.Name}
 		c.AddSymbol(packageScope, fname, bind)
 		funScope := curr.AddScope()
 		c.resolveSignature(funScope, x.Signature)
@@ -496,7 +527,7 @@ func (c *Checker) defineLet(packageScope, curr *Env, des ast.Node) {
 	switch des := des.(type) {
 	case *ast.Ident:
 		c.checkTopLevelCollision(curr, des.Name.Data)
-		bind := VarBind{}
+		bind := VarBind{Def: des}
 		c.AddSymbol(packageScope, des.Name.Data, bind)
 		c.envOf[des] = packageScope
 		c.fileOf[des.Name.Data] = curr
@@ -517,6 +548,14 @@ func (c *Checker) resolveTypeBody(curr *Env, T ast.Node) {
 		} else {
 			c.AddSymbol(curr, T.Name.Data, Unresolved{})
 		}
+	case *ast.Tuple:
+		for _, elem := range T.Elements {
+			// should we create a scope here?
+			// how do we treat labels?
+			c.resolveTypeBody(curr, elem)
+		}
+	case *ast.CommaElement:
+		c.resolveTypeBody(curr, T.X)
 	default:
 		panic("TODO")
 	}
