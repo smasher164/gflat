@@ -147,6 +147,38 @@ func (c *Checker) infer(x ast.Node) {
 		c.typeOf[x] = Int
 	case *ast.BasicString:
 		c.typeOf[x] = String
+	case *ast.IndexExpr:
+		c.infer(x.X)
+		tX := c.typeOf[x.X]
+		switch tX := tX.(type) {
+		case Tuple:
+			if len(x.IndexElements) != 1 {
+				panic("there can only be one indexer for tuples")
+			}
+			idx, ok := x.IndexElements[0].(*ast.CommaElement)
+			if !ok {
+				panic("index must be a constant number")
+			}
+			num, ok := idx.X.(*ast.Number)
+			if !ok {
+				panic("index must be a constant number")
+			}
+			if !num.IsNat() {
+				panic("index must be a nat")
+			}
+			if idx, err := strconv.Atoi(num.Lit.Data); err == nil {
+				if idx >= len(tX.Fields) {
+					panic("index is out of bounds of tuple")
+				}
+				f := tX.Fields[idx]
+				c.typeOf[x.IndexElements[0]] = Int
+				c.typeOf[x] = f.Type
+			} else {
+				panic("index is not valid integer")
+			}
+		default:
+			panic("unhandled index")
+		}
 	case *ast.BinaryExpr:
 		switch x.Op.Type {
 		case lexer.Plus:
@@ -426,6 +458,13 @@ func (c *Checker) resolve(env *Env, x ast.Node) {
 		c.envOf[x] = env
 	case *ast.CommaElement:
 		c.resolve(env, x.X)
+		c.envOf[x] = env
+	case *ast.IndexExpr:
+		// TODO: import-level index exprs
+		c.resolve(env, x.X)
+		for _, elem := range x.IndexElements {
+			c.resolve(env, elem)
+		}
 		c.envOf[x] = env
 	// p := &packageResolver{
 	// 	Checker:      c,

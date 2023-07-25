@@ -5,6 +5,7 @@ import (
 	"go/format"
 	"io/fs"
 	"os"
+	"strconv"
 	"strings"
 
 	"github.com/smasher164/gflat/ast"
@@ -203,6 +204,28 @@ func (c *Codegen) codegenExpr(f fsx.WriteableFile, x ast.Node, topLevel bool) []
 		// 	}
 		// }
 		panic("unreachable")
+	case *ast.IndexExpr:
+		expr := c.codegenExpr(f, x.X, topLevel)[0]
+		tX := c.checker.GetType(x.X)
+		switch tX := tX.(type) {
+		case types2.Tuple:
+			// why are we computing this twice?
+			i, err := strconv.Atoi(x.IndexElements[0].(*ast.CommaElement).X.(*ast.Number).Lit.Data)
+			if err != nil {
+				panic(err)
+			}
+			// find the name of the ith element of the tuple
+			fd := tX.Fields[i]
+			if fd.Name != nil {
+				panic("named tuples not implemented yet")
+			}
+			nvar := c.checker.FreshName().Name.Data
+			tR := c.checker.GetType(x)
+			fmt.Fprintf(f, "var %s %s = %s.F%d\n", nvar, typeString(tR), expr, i)
+			return []string{nvar}
+		default:
+			panic("unhandled indexable")
+		}
 	case *ast.PrefixExpr:
 		expr := c.codegenExpr(f, x.X, topLevel)[0]
 		tprefix := c.checker.GetType(x)

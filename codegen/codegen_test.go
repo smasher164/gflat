@@ -94,6 +94,11 @@ func Test(t *testing.T) {
 		type Foo = (int, int)
 		let p : Foo = (0, 0)
 		`},
+		{"a/test15.gf", `
+		package a
+
+		let q = (2, 4)[0]
+		`},
 		// {"a/test9.gf", `
 		// package a
 
