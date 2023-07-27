@@ -29,8 +29,10 @@ const formatSource = true
 
 type Codegen struct {
 	// assumes we have a resolved and typed build
-	importer *parser.Importer
-	checker  *types2.Checker
+	importer     *parser.Importer
+	checker      *types2.Checker
+	unsafeImport string // since this is happening serially, we're only using one.
+	// but in parallel, you'd need n copies for n packages.
 }
 
 func NewCodegen(importer *parser.Importer, checker *types2.Checker) *Codegen {
@@ -107,9 +109,14 @@ func (c *Codegen) codegen(outfs fs.FS, x ast.Node) {
 		} else {
 			fmt.Fprintf(f, "//go:build ignore\n\npackage main\n\n")
 		}
+		// maybe avoid importing it if user already imports it?
+		unsafeImport := c.checker.FreshName("unsafe").Name.Data
 		for imp := range x.Imports {
 			fmt.Fprintf(f, "import %q\n", imp)
 		}
+		fmt.Fprintf(f, "import %s \"unsafe\"\n", unsafeImport)
+		fmt.Fprintf(f, "type _ = %s.Pointer\n", unsafeImport)
+		c.unsafeImport = unsafeImport
 		if x.PackageName != nil {
 			c.codegenExprTopLevel(f, x.Body)
 		} else {
@@ -129,11 +136,33 @@ func (c *Codegen) codegenExprTopLevel(f fsx.WriteableFile, x ast.Node) {
 	}
 }
 
+func (c *Codegen) checkCodegenTuple(f fsx.WriteableFile, x ast.Node, dstType types2.Type, topLevel bool) string {
+	ttup := c.checker.GetType(x)
+	vars := c.codegenExpr(f, x, topLevel)
+	if c.checker.GoConvertible(dstType, ttup) { // TODO: equivalent
+		return vars[0]
+	}
+	return fmt.Sprintf("*(*%s)(%s.Pointer(&%s))", typeString(dstType), c.unsafeImport, vars[0])
+}
+
+func (c *Codegen) checkCodegenBinExp(f fsx.WriteableFile, x ast.Node, dstType types2.Type, topLevel bool) string {
+	switch x := x.(type) {
+	case *ast.Number:
+		return x.Lit.Data
+	case *ast.BasicString:
+		return x.Lit.Data
+	case *ast.CommaElement:
+		return c.checkCodegenBinExp(f, x.X, dstType, topLevel)
+	default:
+		return c.checkCodegenTuple(f, x, dstType, topLevel)
+	}
+}
+
 func (c *Codegen) codegenExpr(f fsx.WriteableFile, x ast.Node, topLevel bool) []string {
 	switch x := x.(type) {
 	case *ast.Block:
 		tblk := c.checker.GetType(x)
-		tmp := c.checker.FreshName().Name.Data               // TODO: also add to env
+		tmp := c.checker.FreshName("").Name.Data             // TODO: also add to env
 		fmt.Fprintf(f, "var %s %s\n", tmp, typeString(tblk)) // TODO: print go type
 		// blocks are weird, cause they can be used in expression position.
 		if topLevel {
@@ -166,17 +195,25 @@ func (c *Codegen) codegenExpr(f fsx.WriteableFile, x ast.Node, topLevel bool) []
 		fmt.Fprintf(f, "_ = %s\n", vars[0])
 		return []string{"_"}
 	case *ast.LetDecl:
-		var rhs string
-		switch r := x.Rhs.(type) {
-		case *ast.Number:
-			rhs = r.Lit.Data
-		case *ast.BasicString:
-			rhs = r.Lit.Data
-		default:
-			rhs = c.codegenExpr(f, x.Rhs, topLevel)[0]
-		}
 		tlet := c.checker.GetType(x.Destructure)
 		goTLet := typeString(tlet)
+		rhs := c.checkCodegenBinExp(f, x.Rhs, tlet, topLevel)
+		// switch r := x.Rhs.(type) {
+		// case *ast.Number:
+		// 	rhs = r.Lit.Data
+		// case *ast.BasicString:
+		// 	rhs = r.Lit.Data
+		// case *ast.Tuple:
+		// 	ttup := c.checker.GetType(r)
+		// 	vars := c.codegenExpr(f, x.Rhs, topLevel)
+		// 	if c.checker.GoConvertible(tlet, ttup) { // TODO: equivalent
+		// 		rhs = vars[0]
+		// 	} else {
+		// 		rhs = fmt.Sprintf("*(*%s)(%s.Pointer(&%s))", goTLet, c.unsafeImport, vars[0])
+		// 	}
+		// default:
+		// 	rhs = c.checkCodegenTuple(f, x.Rhs, tlet, topLevel)
+		// }
 		switch des := x.Destructure.(type) {
 		case *ast.Ident:
 			fmt.Fprintf(f, "var %s %s = %s\n", des.Name.Data, goTLet, rhs)
@@ -216,12 +253,18 @@ func (c *Codegen) codegenExpr(f fsx.WriteableFile, x ast.Node, topLevel bool) []
 			}
 			// find the name of the ith element of the tuple
 			fd := tX.Fields[i]
-			if fd.Name != nil {
-				panic("named tuples not implemented yet")
+			var fname string
+			if fd.Name == nil {
+				fname = fmt.Sprintf("F%d", i)
+			} else {
+				fname = fd.Name.Name.Data
 			}
-			nvar := c.checker.FreshName().Name.Data
+			// if fd.Name != nil {
+			// 	panic("named tuples not implemented yet")
+			// }
+			nvar := c.checker.FreshName("").Name.Data
 			tR := c.checker.GetType(x)
-			fmt.Fprintf(f, "var %s %s = %s.F%d\n", nvar, typeString(tR), expr, i)
+			fmt.Fprintf(f, "var %s %s = %s.%s\n", nvar, typeString(tR), expr, fname)
 			return []string{nvar}
 		default:
 			panic("unhandled indexable")
@@ -230,40 +273,42 @@ func (c *Codegen) codegenExpr(f fsx.WriteableFile, x ast.Node, topLevel bool) []
 		expr := c.codegenExpr(f, x.X, topLevel)[0]
 		tprefix := c.checker.GetType(x)
 		goTPrefix := typeString(tprefix)
-		pvar := c.checker.FreshName().Name.Data
+		pvar := c.checker.FreshName("").Name.Data
 		fmt.Fprintf(f, "var %s %s = %s%s\n", pvar, goTPrefix, opString(x.Op.Type), expr)
 		return []string{pvar}
 	case *ast.BinaryExpr:
 		// if left or right is a constant, we don't need temporaries
 		var left string
-		switch l := x.Left.(type) {
-		case *ast.Number:
-			left = l.Lit.Data
-		case *ast.BasicString:
-			left = l.Lit.Data
-		default:
-			left = c.codegenExpr(f, x.Left, topLevel)[0]
-		}
+		left = c.checkCodegenBinExp(f, x.Left, c.checker.GetType(x.Left), topLevel)
+		// switch l := x.Left.(type) {
+		// case *ast.Number:
+		// 	left = l.Lit.Data
+		// case *ast.BasicString:
+		// 	left = l.Lit.Data
+		// default:
+		// 	left = c.codegenExpr(f, x.Left, topLevel)[0]
+		// }
 		var right string
-		switch r := x.Right.(type) {
-		case *ast.Number:
-			right = r.Lit.Data
-		case *ast.BasicString:
-			right = r.Lit.Data
-		default:
-			right = c.codegenExpr(f, x.Right, topLevel)[0]
-		}
+		right = c.checkCodegenBinExp(f, x.Right, c.checker.GetType(x.Right), topLevel)
+		// switch r := x.Right.(type) {
+		// case *ast.Number:
+		// 	right = r.Lit.Data
+		// case *ast.BasicString:
+		// 	right = r.Lit.Data
+		// default:
+		// 	right = c.codegenExpr(f, x.Right, topLevel)[0]
+		// }
 		tbin := c.checker.GetType(x)
 		goTBin := typeString(tbin)
-		bvar := c.checker.FreshName()
+		bvar := c.checker.FreshName("")
 		fmt.Fprintf(f, "var %s %s = %s %s %s\n", bvar.Name.Data, goTBin, left, opString(x.Op.Type), right)
 		return []string{bvar.Name.Data}
 	case *ast.Number:
-		nvar := c.checker.FreshName()
+		nvar := c.checker.FreshName("")
 		fmt.Fprintf(f, "var %s %s = %s\n", nvar.Name.Data, typeString(c.checker.GetType(x)), x.Lit.Data)
 		return []string{nvar.Name.Data}
 	case *ast.BasicString:
-		nvar := c.checker.FreshName()
+		nvar := c.checker.FreshName("")
 		fmt.Fprintf(f, "var %s %s = %s\n", nvar.Name.Data, typeString(c.checker.GetType(x)), x.Lit.Data)
 		return []string{nvar.Name.Data}
 	case *ast.Ident:
@@ -272,17 +317,17 @@ func (c *Codegen) codegenExpr(f fsx.WriteableFile, x ast.Node, topLevel bool) []
 		cvar := c.codegenExpr(f, x.IfHeader.Cond, topLevel)
 		tif := c.checker.GetType(x)
 		goTIf := typeString(tif)
-		ifvar := c.checker.FreshName().Name.Data
+		ifvar := c.checker.FreshName("").Name.Data
 		fmt.Fprintf(f, "var %s %s\n", ifvar, goTIf)
 		if topLevel {
 			fmt.Fprintf(f, "var _ struct{} = func() struct{} {\n")
 		}
 		fmt.Fprintf(f, "if %s {\n", cvar[0])
-		bodyVar := c.codegenExpr(f, x.Body, false)
-		fmt.Fprintf(f, "%s = %s\n", ifvar, bodyVar[0])
+		bodyVar := c.checkCodegenTuple(f, x.Body, tif, false)
+		fmt.Fprintf(f, "%s = %s\n", ifvar, bodyVar)
 		fmt.Fprintf(f, "} else {\n")
-		elseVar := c.codegenExpr(f, x.ElseBody, false)
-		fmt.Fprintf(f, "%s = %s\n", ifvar, elseVar[0])
+		elseVar := c.checkCodegenTuple(f, x.ElseBody, tif, false)
+		fmt.Fprintf(f, "%s = %s\n", ifvar, elseVar)
 		fmt.Fprintf(f, "}\n")
 		if topLevel {
 			fmt.Fprintf(f, "return struct{}{}\n")
@@ -293,7 +338,7 @@ func (c *Codegen) codegenExpr(f fsx.WriteableFile, x ast.Node, topLevel bool) []
 		cvar := c.codegenExpr(f, x.IfHeader.Cond, topLevel)
 		tif := c.checker.GetType(x)
 		goTIf := typeString(tif) // this is just unit
-		ifvar := c.checker.FreshName().Name.Data
+		ifvar := c.checker.FreshName("").Name.Data
 		fmt.Fprintf(f, "var %s %s\n", ifvar, goTIf)
 		if topLevel {
 			fmt.Fprintf(f, "var _ struct{} = func() struct{} {\n")
@@ -320,12 +365,13 @@ func (c *Codegen) codegenExpr(f fsx.WriteableFile, x ast.Node, topLevel bool) []
 		}
 		var vars []string
 		for _, elem := range x.Elements {
-			vars = append(vars, c.codegenExpr(f, elem, topLevel)...)
+			v := c.checkCodegenBinExp(f, elem, c.checker.GetType(elem), topLevel)
+			vars = append(vars, v)
 		}
 		if len(vars) != len(x.Elements) {
 			panic("unequal number of elements")
 		}
-		nvar := c.checker.FreshName()
+		nvar := c.checker.FreshName("")
 		tstr := typeString(c.checker.GetType(x))
 		fmt.Fprintf(f, "var %s = %s{", nvar.Name.Data, tstr)
 		for _, v := range vars {
@@ -406,7 +452,13 @@ func typeString(t types2.Type) string {
 		buf.WriteString("struct{")
 		for i, f := range t.Fields {
 			// TODO: f.Name
-			fmt.Fprintf(buf, "F%d %s;", i, typeString(f.Type))
+			var fname string
+			if f.Name == nil {
+				fname = fmt.Sprintf("F%d", i)
+			} else {
+				fname = f.Name.Name.Data
+			}
+			fmt.Fprintf(buf, "%s %s;", fname, typeString(f.Type))
 		}
 		buf.WriteByte('}')
 		return buf.String()

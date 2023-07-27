@@ -24,7 +24,7 @@ func TestPackage(t *testing.T) {
 		print "Hello, World!"
 		`},
 	})
-	pkg, err := parser.ParsePackage(fsys, "a.gf", "b.gf", "c.gf")
+	pkg, err := parser.ParsePackage(fsys, "c.gf", "a.gf", "b.gf")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -32,8 +32,11 @@ func TestPackage(t *testing.T) {
 }
 
 func TestFile(t *testing.T) {
+	// fsys := fsx.TestFS([][2]string{{"test.gf", `
+	// open file ?> ctx $"could not open {file}" |> readFile
+	// `}})
 	fsys := fsx.TestFS([][2]string{{"test.gf", `
-	open file ?> ctx $"could not open {file}" |> readFile
+	let x : (a: int, b: bool)
 	`}})
 	// fsys := fstest.MapFS{
 	// 	"test.gf": &fstest.MapFile{

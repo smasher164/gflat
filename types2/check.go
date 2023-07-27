@@ -183,8 +183,7 @@ func (c *Checker) infer(x ast.Node) {
 		switch x.Op.Type {
 		case lexer.Plus:
 			c.infer(x.Left)
-			c.check(x.Right, c.typeOf[x.Left])
-			c.typeOf[x] = c.typeOf[x.Left]
+			c.typeOf[x] = c.check(x.Right, c.typeOf[x.Left])
 		case lexer.Minus, lexer.Times, lexer.LeftShift, lexer.RightShift, lexer.Remainder, lexer.Divide, lexer.Or, lexer.And, lexer.Caret, lexer.Exponentiation:
 			c.check(x.Left, Int)
 			c.check(x.Right, Int)
@@ -218,8 +217,7 @@ func (c *Checker) infer(x ast.Node) {
 	case *ast.IfElse:
 		c.check(x.IfHeader, Bool)
 		c.infer(x.Body)
-		c.check(x.ElseBody, c.typeOf[x.Body])
-		c.typeOf[x] = c.typeOf[x.Body]
+		c.typeOf[x] = c.check(x.ElseBody, c.typeOf[x.Body]) // if-else needs an mgu
 	case *ast.If:
 		c.check(x.IfHeader, Bool)
 		c.check(x.Body, Unit)
@@ -261,9 +259,9 @@ func (c *Checker) infer(x ast.Node) {
 	}
 }
 
-func (c *Checker) check(x ast.Node, t Type) {
+func (c *Checker) check(x ast.Node, t Type) Type {
 	c.infer(x)
-	c.unify(c.typeOf[x], t)
+	return c.unify(c.typeOf[x], t)
 }
 
 func (c *Checker) reifyType(t ast.Node) Type {
@@ -291,16 +289,34 @@ func (c *Checker) reifyType(t ast.Node) Type {
 		}
 	case *ast.Tuple:
 		fields := make([]Field, len(t.Elements))
+		hasField := false
+		hasNonField := false
 		for i, elem := range t.Elements {
-			fields[i] = Field{
-				// TODO: Name
-				Type: c.reifyType(elem),
+			rt := c.reifyType(elem)
+			// better way to write this?
+			if f, ok := rt.(Field); ok {
+				fields[i] = f
+				hasField = true
+			} else {
+				fields[i] = Field{
+					Type: rt,
+				}
+				hasNonField = true
 			}
+
+		}
+		if hasField && hasNonField {
+			panic("cannot mix field an non-field")
 		}
 		// should we add this to typeof?
 		return Tuple{fields}
 	case *ast.CommaElement:
 		return c.reifyType(t.X)
+	case *ast.Field:
+		return Field{
+			Name: t.Name,
+			Type: c.reifyType(t.Type),
+		}
 	case *ast.TypeDecl:
 		c.infer(t)
 		return c.typeOf[t]
@@ -330,10 +346,49 @@ func (c *Checker) simpleEquals(a, b Type) bool {
 	return false
 }
 
-func (c *Checker) unify(a, b Type) {
+// TODO: maybe just repurpose unify?
+func (c *Checker) GoConvertible(a, b Type) bool {
+	if c.simpleEquals(a, b) {
+		return true
+	}
+	if a, ok := a.(Named); ok {
+		return c.GoConvertible(a.Type, b)
+	}
+	if b, ok := b.(Named); ok {
+		return c.GoConvertible(a, b.Type)
+	}
+	if a, ok := a.(Tuple); ok {
+		if b, ok := b.(Tuple); ok {
+			if len(a.Fields) != len(b.Fields) {
+				return false
+			}
+			for i := range a.Fields {
+				af, bf := a.Fields[i], b.Fields[i]
+				var aname string
+				var bname string
+				if af.Name != nil {
+					aname = af.Name.Name.Data
+				}
+				if bf.Name != nil {
+					bname = bf.Name.Name.Data
+				}
+				if aname != bname {
+					return false
+				}
+				if !c.GoConvertible(af.Type, bf.Type) {
+					return false
+				}
+			}
+		}
+	}
+	return true
+}
+
+// return the mgu
+func (c *Checker) unify(a, b Type) Type {
 	a, b = c.get(a), c.get(b)
 	if c.simpleEquals(a, b) {
-		return
+		return a
 	}
 	if aTV, ok := a.(TypeVar); ok {
 		// TODO: occurs check
@@ -346,7 +401,7 @@ func (c *Checker) unify(a, b Type) {
 		// }
 		aTV.Ref.Bound = true
 		aTV.Ref.Type = b
-		return
+		return b
 	}
 	if bTV, ok := b.(TypeVar); ok {
 		// TODO: occurs check
@@ -359,18 +414,17 @@ func (c *Checker) unify(a, b Type) {
 		// }
 		bTV.Ref.Bound = true
 		bTV.Ref.Type = a
-		return
+		return a
 	}
 	// TODO: hold off until we understand subtyping and structural typing.
 	if nom, ok := a.(Named); ok {
 		if _, ok := b.(Named); !ok {
-			c.unify(nom.Type, b)
-			return
+			return c.unify(nom.Type, b)
 		}
 	} else if nom, ok := b.(Named); ok {
-		c.unify(a, nom.Type)
-		return
+		return c.unify(a, nom.Type)
 	}
+	var nf []Field
 	if tup1, ok := a.(Tuple); ok {
 		if tup2, ok := b.(Tuple); ok {
 			if len(tup1.Fields) != len(tup2.Fields) {
@@ -381,16 +435,20 @@ func (c *Checker) unify(a, b Type) {
 				f2 := tup2.Fields[i]
 				if f1.Name != nil && f2.Name != nil {
 					if f1.Name.Name.Data != f2.Name.Name.Data {
-						panic("tuple field name mismatch")
+						panic(fmt.Sprintf("tuple field name mismatch: %v and %v", f1.Name.Name.Data, f2.Name.Name.Data))
 					}
-					c.unify(tup1.Fields[i].Type, tup2.Fields[i].Type)
+					nf = append(nf, Field{
+						f1.Name,
+						c.unify(tup1.Fields[i].Type, tup2.Fields[i].Type),
+					})
 				} else if f1.Name == nil && f2.Name == nil {
-					c.unify(tup1.Fields[i].Type, tup2.Fields[i].Type)
+					nf = append(nf, Field{Type: c.unify(tup1.Fields[i].Type, tup2.Fields[i].Type)})
 				} else {
-					panic("tuple field name mismatch")
+					nf = append(nf, Field{Type: c.unify(tup1.Fields[i].Type, tup2.Fields[i].Type)})
+					// panic("tuple field name mismatch")
 				}
 			}
-			return
+			return Tuple{Fields: nf}
 		}
 	}
 	panic(fmt.Sprintf("TODO: unify %s %s", a, b))
@@ -457,6 +515,7 @@ func (c *Checker) resolve(env *Env, x ast.Node) {
 		}
 		c.envOf[x] = env
 	case *ast.CommaElement:
+		// TODO: add support for assigning the fields
 		c.resolve(env, x.X)
 		c.envOf[x] = env
 	case *ast.IndexExpr:
@@ -502,10 +561,22 @@ func (c *Checker) resolveSignature(env *Env, sig *ast.FunctionSignature) {
 }
 
 // If it's top-level, also check that it doesn't collide with imports.
-func (c *Checker) FreshName() *ast.Ident {
+func (c *Checker) FreshName(seed string) *ast.Ident {
+	if seed == "" {
+		seed = "tmp"
+	}
+	if _, ok := c.unique[seed]; !ok {
+		c.unique[seed] = struct{}{}
+		return &ast.Ident{
+			Name: lexer.Token{
+				Type: lexer.Ident,
+				Data: seed,
+			},
+		}
+	}
 	num := 0
 	for {
-		name := "tmp" + strconv.Itoa(num)
+		name := seed + strconv.Itoa(num)
 		if _, ok := c.unique[name]; !ok {
 			c.unique[name] = struct{}{}
 			return &ast.Ident{
@@ -588,13 +659,22 @@ func (c *Checker) resolveTypeBody(curr *Env, T ast.Node) {
 			c.AddSymbol(curr, T.Name.Data, Unresolved{})
 		}
 	case *ast.Tuple:
+		paramScope := curr.AddScope()
 		for _, elem := range T.Elements {
 			// should we create a scope here?
 			// how do we treat labels?
-			c.resolveTypeBody(curr, elem)
+			c.resolveTypeBody(paramScope, elem)
 		}
 	case *ast.CommaElement:
 		c.resolveTypeBody(curr, T.X)
+	case *ast.Field:
+		// TODO: default parameters
+		fname := T.Name.Name.Data
+		if _, ok := curr.LookupLocal(fname); ok {
+			panic("field already defined")
+		}
+		c.AddSymbol(curr, fname, VarBind{Def: T.Name}) // what kind of binding is this?
+		c.resolveTypeBody(curr, T.Type)
 	default:
 		panic("TODO")
 	}

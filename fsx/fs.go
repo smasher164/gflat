@@ -2,6 +2,7 @@ package fsx
 
 import (
 	"errors"
+	"fmt"
 	"io"
 	"io/fs"
 	"os"
@@ -34,12 +35,13 @@ func TestFS(files [][2]string) *treeFS {
 		path, body := file[0], file[1]
 		parts := strings.Split(path, string(os.PathSeparator))
 		for i, part := range parts {
+			j := cur.fileIndex(part)
 			if i == len(parts)-1 {
+				if j >= 0 {
+					panic(fmt.Sprintf("%q already exists", path))
+				}
 				cur.entries = append(cur.entries, newTreeFile(part, 0, []byte(body)))
 			} else {
-				j := slices.IndexFunc(cur.entries, func(f fs.File) bool {
-					return nameOf(f) == part
-				})
 				if j < 0 {
 					cur.entries = append(cur.entries, newTreeFS(part, 0))
 					j = len(cur.entries) - 1
@@ -159,9 +161,7 @@ func (tfs *treeFS) Read([]byte) (int, error) { return 0, errors.New("cannot read
 
 // Mkdir implements MkdirFS
 func (tfs *treeFS) Mkdir(name string, perm fs.FileMode) (fs.FS, error) {
-	i := slices.IndexFunc(tfs.entries, func(f fs.File) bool {
-		return nameOf(f) == name
-	})
+	i := tfs.fileIndex(name)
 	if i >= 0 {
 		return nil, &fs.PathError{Op: "mkdir", Path: name, Err: fs.ErrExist}
 	}
@@ -182,9 +182,7 @@ func newTreeFS(name string, perm fs.FileMode) *treeFS {
 
 // Create implements CreateFS
 func (tfs *treeFS) Create(name string) (WriteableFile, error) {
-	i := slices.IndexFunc(tfs.entries, func(f fs.File) bool {
-		return nameOf(f) == name
-	})
+	i := tfs.fileIndex(name)
 	if i >= 0 {
 		// if it already exists, truncate it
 		if f, ok := tfs.entries[i].(*treeFile); ok {
@@ -209,6 +207,12 @@ func nameOf(f fs.File) string {
 	panic("unreachable")
 }
 
+func (tfs *treeFS) fileIndex(name string) int {
+	return slices.IndexFunc(tfs.entries, func(f fs.File) bool {
+		return nameOf(f) == name
+	})
+}
+
 func (tfs *treeFS) open(name string) (fs.File, error) {
 	elems := strings.Split(name, string(os.PathSeparator))
 	cur := tfs
@@ -216,9 +220,7 @@ func (tfs *treeFS) open(name string) (fs.File, error) {
 		if elem == "." {
 			continue
 		}
-		i := slices.IndexFunc(cur.entries, func(f fs.File) bool {
-			return nameOf(f) == elem
-		})
+		i := cur.fileIndex(elem)
 		if i < 0 {
 			return nil, &fs.PathError{Op: "open", Path: name, Err: fs.ErrNotExist}
 		}

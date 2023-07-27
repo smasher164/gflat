@@ -99,6 +99,19 @@ func Test(t *testing.T) {
 
 		let q = (2, 4)[0]
 		`},
+		{"a/test16.gf", `
+		package a
+
+		let r : (a: int, b: int) = (2, 4)
+		let s = r[0]
+		`},
+		{"a/test17.gf", `
+		package a
+
+		let t : (a: int, b: int) = (2, 4)
+		let u = if (true) t else (1, 2)
+		let v = if (true) (1, 2) else t
+		`},
 		// {"a/test9.gf", `
 		// package a
 

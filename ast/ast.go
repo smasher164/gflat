@@ -842,7 +842,7 @@ func (f *FunctionType) ASTString(depth int) string {
 }
 
 type Field struct {
-	Name    Node
+	Name    *Ident
 	Colon   lexer.Token
 	Type    Node
 	Equals  lexer.Token
