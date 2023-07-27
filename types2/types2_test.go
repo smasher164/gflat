@@ -109,6 +109,12 @@ func TestInferExpression(t *testing.T) {
 		let u = if (true) t else (1, 2)
 		let v = if (true) (1, 2) else t
 		`},
+		{"a/test18.gf", `
+		package a
+
+		let w = ((1, 2), 3)
+		let x = w[0][1]
+		`},
 	})
 	importer := parser.NewImporter(fsys)
 	if err := importer.ImportCrawl("a", ""); err != nil {

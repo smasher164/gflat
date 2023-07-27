@@ -57,6 +57,13 @@ func (c *Checker) GetType(x ast.Node) Type {
 	return c.get(c.typeOf[x])
 }
 
+func (c *Checker) TryGetType(x ast.Node) (Type, bool) {
+	if t, ok := c.typeOf[x]; ok {
+		return c.get(t), true
+	}
+	return nil, false
+}
+
 func (c *Checker) ProcessBuild() error {
 	for _, path := range c.importer.Sorted {
 		// c.err = errors.Join(c.err, err) just do this when we get the rror
@@ -70,7 +77,7 @@ func (c *Checker) ProcessBuild() error {
 // should infer handle type declarations?
 // should its type be associated in typeOf?
 func (c *Checker) infer(x ast.Node) {
-	if _, ok := c.typeOf[x]; ok {
+	if _, ok := c.TryGetType(x); ok {
 		return
 	}
 	switch x := x.(type) {
@@ -88,7 +95,7 @@ func (c *Checker) infer(x ast.Node) {
 		for i, elem := range x.Body {
 			c.infer(elem)
 			if i == len(x.Body)-1 { // we don't need to check the previous elements
-				if t, ok := c.typeOf[elem]; ok {
+				if t, ok := c.TryGetType(elem); ok {
 					lastType = t
 				}
 			}
@@ -100,11 +107,11 @@ func (c *Checker) infer(x ast.Node) {
 	case *ast.LetDecl:
 		// get partial type annotation from destructure
 		c.infer(x.Destructure)
-		tdes := c.typeOf[x.Destructure]
+		tdes := c.GetType(x.Destructure)
 		_ = tdes
 		c.infer(x.Rhs)
-		trhs := c.typeOf[x.Rhs]
-		c.unify(c.typeOf[x.Destructure], trhs)
+		trhs := c.GetType(x.Rhs)
+		c.unify(c.GetType(x.Destructure), trhs)
 		// c.typeOf[x] = trhs
 		// if destructure has a type annotation, ...
 		// otherwise, set its type to trhs
@@ -133,7 +140,7 @@ func (c *Checker) infer(x ast.Node) {
 				break
 			}
 			if b, ok := b.(VarBind); ok {
-				if t, ok := c.typeOf[b.Def]; ok {
+				if t, ok := c.TryGetType(b.Def); ok {
 					c.typeOf[x] = t
 					break
 				}
@@ -149,7 +156,7 @@ func (c *Checker) infer(x ast.Node) {
 		c.typeOf[x] = String
 	case *ast.IndexExpr:
 		c.infer(x.X)
-		tX := c.typeOf[x.X]
+		tX := c.GetType(x.X)
 		switch tX := tX.(type) {
 		case Tuple:
 			if len(x.IndexElements) != 1 {
@@ -177,13 +184,13 @@ func (c *Checker) infer(x ast.Node) {
 				panic("index is not valid integer")
 			}
 		default:
-			panic("unhandled index")
+			panic(fmt.Sprintf("unhandled index %T", tX))
 		}
 	case *ast.BinaryExpr:
 		switch x.Op.Type {
 		case lexer.Plus:
 			c.infer(x.Left)
-			c.typeOf[x] = c.check(x.Right, c.typeOf[x.Left])
+			c.typeOf[x] = c.check(x.Right, c.GetType(x.Left))
 		case lexer.Minus, lexer.Times, lexer.LeftShift, lexer.RightShift, lexer.Remainder, lexer.Divide, lexer.Or, lexer.And, lexer.Caret, lexer.Exponentiation:
 			c.check(x.Left, Int)
 			c.check(x.Right, Int)
@@ -194,7 +201,7 @@ func (c *Checker) infer(x ast.Node) {
 			c.typeOf[x] = Bool
 		case lexer.LogicalEquals, lexer.NotEquals:
 			c.infer(x.Left)
-			c.check(x.Right, c.typeOf[x.Left])
+			c.check(x.Right, c.GetType(x.Left))
 			c.typeOf[x] = Bool
 		case lexer.LessThan, lexer.LessThanEquals, lexer.GreaterThan, lexer.GreaterThanEquals:
 			c.check(x.Left, Int)
@@ -217,14 +224,14 @@ func (c *Checker) infer(x ast.Node) {
 	case *ast.IfElse:
 		c.check(x.IfHeader, Bool)
 		c.infer(x.Body)
-		c.typeOf[x] = c.check(x.ElseBody, c.typeOf[x.Body]) // if-else needs an mgu
+		c.typeOf[x] = c.check(x.ElseBody, c.GetType(x.Body)) // if-else needs an mgu
 	case *ast.If:
 		c.check(x.IfHeader, Bool)
 		c.check(x.Body, Unit)
 		c.typeOf[x] = Unit
 	case *ast.IfHeader:
 		c.infer(x.Cond)
-		c.typeOf[x] = c.typeOf[x.Cond]
+		c.typeOf[x] = c.GetType(x.Cond)
 		// should probably panic if something isn't in the typeOf map
 	case *ast.Tuple:
 		// If it's a length 1 tuple with no trailing comma, it's just the type of the element
@@ -233,8 +240,9 @@ func (c *Checker) infer(x ast.Node) {
 			if elem, ok := x.Elements[0].(*ast.CommaElement); ok {
 				if elem.Comma.Type != lexer.Comma {
 					c.infer(elem.X)
-					c.typeOf[elem] = c.typeOf[elem.X]
-					c.typeOf[x] = c.typeOf[elem.X]
+					tX := c.GetType(elem.X)
+					c.typeOf[elem] = tX
+					c.typeOf[x] = tX
 					break
 				}
 			}
@@ -244,13 +252,13 @@ func (c *Checker) infer(x ast.Node) {
 			c.infer(elem)
 			fields[i] = Field{
 				// TODO: Name
-				Type: c.typeOf[elem],
+				Type: c.GetType(elem),
 			}
 		}
 		c.typeOf[x] = Tuple{fields}
 	case *ast.CommaElement:
 		c.infer(x.X)
-		c.typeOf[x] = c.typeOf[x.X]
+		c.typeOf[x] = c.GetType(x.X)
 	case *ast.TypeDecl:
 		c.typeOf[x] = Named{
 			Name: x.Name,
@@ -537,7 +545,7 @@ func (c *Checker) resolve(env *Env, x ast.Node) {
 	// p.checkTopLevelCycles()
 	// return p.pkg
 	default:
-		panic(fmt.Sprintf("unhandled node type %T", x))
+		panic(fmt.Sprintf("resolve: unhandled node type %T", x))
 	}
 }
 
