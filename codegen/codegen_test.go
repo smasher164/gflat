@@ -138,6 +138,12 @@ func Test(t *testing.T) {
 		let z : (a: int, b: int) = (2, 4)
 		let z2 = z.b
 		`},
+		{"a/test21.gf", `
+		package a
+
+		let z3 = (a = 2, b = 4)
+		let z4 = z3.a
+		`},
 		// {"a/test9.gf", `
 		// package a
 

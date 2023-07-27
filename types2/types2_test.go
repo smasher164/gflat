@@ -129,6 +129,18 @@ func TestInferExpression(t *testing.T) {
 			b.Foo
 		}
 		`},
+		{"a/test20.gf", `
+		package a
+
+		let z : (a: int, b: int) = (2, 4)
+		let z2 = z.b
+		`},
+		{"a/test21.gf", `
+		package a
+
+		let z3 = (a = 2, b = 4)
+		let z4 = z3.a
+		`},
 		// {"a/test19.gf", `
 		// package a
 

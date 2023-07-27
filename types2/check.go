@@ -27,6 +27,20 @@ type Checker struct {
 	// intern table for constructed types.
 }
 
+// issue is that external users need access to the package checker to generate fresh names per package.
+// is it worth it?
+type packageChecker struct {
+	*Checker
+	unique map[string]struct{}
+}
+
+func newPackageChecker(c *Checker) *packageChecker {
+	return &packageChecker{
+		Checker: c,
+		unique:  make(map[string]struct{}),
+	}
+}
+
 func NewChecker(importer *parser.Importer) *Checker {
 	c := &Checker{
 		importer: importer,
@@ -238,23 +252,28 @@ OUTER:
 	case *ast.Tuple:
 		// If it's a length 1 tuple with no trailing comma, it's just the type of the element
 		// TODO: does this take into account assignments and stuff?
-		if len(x.Elements) == 1 {
-			if elem, ok := x.Elements[0].(*ast.CommaElement); ok {
-				if elem.Comma.Type != lexer.Comma {
-					c.infer(elem.X)
-					tX := c.GetType(elem.X)
-					c.typeOf[elem] = tX
-					c.typeOf[x] = tX
-					break
-				}
-			}
+		if elem, ok := c.CheckTupleParam(x); ok {
+			c.infer(elem.X)
+			tX := c.GetType(elem.X)
+			c.typeOf[elem] = tX
+			c.typeOf[x] = tX
+			break
 		}
 		fields := make([]Field, len(x.Elements))
 		for i, elem := range x.Elements {
-			c.infer(elem)
-			fields[i] = Field{
-				// TODO: Name
-				Type: c.GetType(elem),
+			if assignExp, ok := c.CheckAssignElem(elem); ok {
+				name := assignExp.Left.(*ast.Ident)
+				c.infer(assignExp.Right)
+				// I don't think the name and assignment get types here?
+				fields[i] = Field{
+					Name: name,
+					Type: c.GetType(assignExp.Right),
+				}
+			} else {
+				c.infer(elem)
+				fields[i] = Field{
+					Type: c.GetType(elem),
+				}
 			}
 		}
 		c.typeOf[x] = Tuple{fields}
@@ -497,6 +516,8 @@ func (c *Checker) unify(a, b Type) Type {
 		return c.unify(a, nom.Type)
 	}
 	var nf []Field
+	// how to handle unordered inferred tuple?
+	// punt that till we have row variables.
 	if tup1, ok := a.(Tuple); ok {
 		if tup2, ok := b.(Tuple); ok {
 			if len(tup1.Fields) != len(tup2.Fields) {
@@ -582,8 +603,24 @@ func (c *Checker) resolve(env *Env, x ast.Node) {
 		c.resolve(env, x.Cond)
 		c.envOf[x] = env
 	case *ast.Tuple:
+		_, isTupleParam := c.CheckTupleParam(x)
+		var hasAssign bool
+		var hasNotAssign bool
 		for _, elem := range x.Elements {
+			if !isTupleParam {
+				if binExp, ok := c.CheckAssignElem(elem); ok {
+					c.resolve(env, binExp.Right) // should this be a new scope?
+					c.envOf[binExp] = env
+					c.envOf[elem] = env
+					hasAssign = true
+					continue
+				}
+				hasNotAssign = true
+			}
 			c.resolve(env, elem)
+		}
+		if hasAssign && hasNotAssign {
+			panic("cannot mix positional and named assignment in tuple")
 		}
 		c.envOf[x] = env
 	case *ast.CommaElement:
@@ -632,6 +669,19 @@ func (c *Checker) resolve(env *Env, x ast.Node) {
 	}
 }
 
+func (c *Checker) CheckAssignElem(elem ast.Node) (*ast.BinaryExpr, bool) {
+	if comm, ok := elem.(*ast.CommaElement); ok {
+		if binExp, ok := comm.X.(*ast.BinaryExpr); ok {
+			if _, ok := binExp.Left.(*ast.Ident); ok { // is this too restrictive?
+				if binExp.Op.Type == lexer.Assign {
+					return binExp, true
+				}
+			}
+		}
+	}
+	return nil, false
+}
+
 func (c *Checker) resolveSignature(env *Env, sig *ast.FunctionSignature) {
 	switch param := sig.Param.(type) {
 	case *ast.TypeAnnotation:
@@ -649,6 +699,17 @@ func (c *Checker) resolveSignature(env *Env, sig *ast.FunctionSignature) {
 	// for _, arrow := range sig.Arrows {
 	// TODO: signature
 	// }
+}
+
+func (c *Checker) CheckTupleParam(x *ast.Tuple) (*ast.CommaElement, bool) {
+	if len(x.Elements) == 1 {
+		if elem, ok := x.Elements[0].(*ast.CommaElement); ok {
+			if elem.Comma.Type != lexer.Comma {
+				return elem, true
+			}
+		}
+	}
+	return nil, false
 }
 
 // If it's top-level, also check that it doesn't collide with imports.

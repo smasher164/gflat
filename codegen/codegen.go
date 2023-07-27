@@ -391,17 +391,17 @@ func (c *packageCodegen) codegenExpr(f fsx.WriteableFile, x ast.Node, topLevel b
 		return c.codegenExpr(f, x.X, topLevel)
 	case *ast.Tuple:
 		// Just handling the 1-tuple with no trailing comma case for now
-		if len(x.Elements) == 1 {
-			if elem, ok := x.Elements[0].(*ast.CommaElement); ok {
-				if elem.Comma.Type != lexer.Comma {
-					return c.codegenExpr(f, elem.X, topLevel)
-				}
-			}
+		if elem, ok := c.checker.CheckTupleParam(x); ok {
+			return c.codegenExpr(f, elem.X, topLevel)
 		}
 		var vars []string
 		for _, elem := range x.Elements {
-			v := c.checkCodegenBinExp(f, elem, c.checker.GetType(elem), topLevel)
-			vars = append(vars, v)
+			if assignExp, ok := c.checker.CheckAssignElem(elem); ok {
+				elem := assignExp.Right
+				vars = append(vars, c.checkCodegenBinExp(f, elem, c.checker.GetType(elem), topLevel))
+			} else {
+				vars = append(vars, c.checkCodegenBinExp(f, elem, c.checker.GetType(elem), topLevel))
+			}
 		}
 		if len(vars) != len(x.Elements) {
 			panic("unequal number of elements")
