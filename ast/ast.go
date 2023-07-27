@@ -920,7 +920,7 @@ func (p *PostfixExpr) ASTString(depth int) string {
 type SelectorExpr struct {
 	X      Node
 	Period lexer.Token
-	Name   Node
+	Name   *Ident
 }
 
 func (s *SelectorExpr) LeadingTrivia() []lexer.Token {

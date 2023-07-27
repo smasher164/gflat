@@ -5,6 +5,7 @@ import (
 	"go/format"
 	"io/fs"
 	"os"
+	"path"
 	"strconv"
 	"strings"
 
@@ -13,6 +14,7 @@ import (
 	"github.com/smasher164/gflat/lexer"
 	"github.com/smasher164/gflat/parser"
 	"github.com/smasher164/gflat/types2"
+	"golang.org/x/mod/module"
 )
 
 // how should the output directory be mocked?
@@ -29,16 +31,26 @@ const formatSource = true
 
 type Codegen struct {
 	// assumes we have a resolved and typed build
-	importer     *parser.Importer
-	checker      *types2.Checker
-	unsafeImport string // since this is happening serially, we're only using one.
-	// but in parallel, you'd need n copies for n packages.
+	importer *parser.Importer
+	checker  *types2.Checker
 }
 
 func NewCodegen(importer *parser.Importer, checker *types2.Checker) *Codegen {
 	return &Codegen{
 		importer: importer,
 		checker:  checker,
+	}
+}
+
+type packageCodegen struct {
+	*Codegen
+	importUnique map[string]string
+}
+
+// do the same thing in checker
+func newPackageCodegen(c *Codegen) *packageCodegen {
+	return &packageCodegen{
+		Codegen: c,
 	}
 }
 
@@ -51,7 +63,7 @@ func (c *Codegen) CodegenBuild(outfs fs.FS) {
 		if err != nil {
 			panic(err) // handle error
 		}
-		c.codegen(pkgdir, pkg) // there should be no errors
+		newPackageCodegen(c).codegen(pkgdir, pkg) // there should be no errors
 	}
 }
 
@@ -64,7 +76,7 @@ func withoutExt(path string) string {
 	return ""
 }
 
-func (c *Codegen) codegen(outfs fs.FS, x ast.Node) {
+func (c *packageCodegen) codegen(outfs fs.FS, x ast.Node) {
 	switch x := x.(type) {
 	case *ast.Package:
 		for _, file := range x.PackageFiles {
@@ -109,14 +121,23 @@ func (c *Codegen) codegen(outfs fs.FS, x ast.Node) {
 		} else {
 			fmt.Fprintf(f, "//go:build ignore\n\npackage main\n\n")
 		}
-		// maybe avoid importing it if user already imports it?
-		unsafeImport := c.checker.FreshName("unsafe").Name.Data
+		// clear for every file?
+		c.importUnique = make(map[string]string)
 		for imp := range x.Imports {
-			fmt.Fprintf(f, "import %q\n", imp)
+			// why are we doing this here too?
+			if prefix, _, ok := module.SplitPathVersion(imp); ok {
+				idimp := path.Base(prefix)
+				freshImp := c.checker.FreshName(idimp).Name.Data
+				c.importUnique[idimp] = freshImp
+				fmt.Fprintf(f, "import %s %q\n", freshImp, imp)
+			}
 		}
-		fmt.Fprintf(f, "import %s \"unsafe\"\n", unsafeImport)
-		fmt.Fprintf(f, "type _ = %s.Pointer\n", unsafeImport)
-		c.unsafeImport = unsafeImport
+		if _, ok := x.Imports["unsafe"]; !ok {
+			unsafeImport := c.checker.FreshName("unsafe").Name.Data
+			c.importUnique["unsafe"] = unsafeImport
+			fmt.Fprintf(f, "import %s \"unsafe\"\n", unsafeImport)
+			fmt.Fprintf(f, "type _ = %s.Pointer\n", unsafeImport)
+		}
 		if x.PackageName != nil {
 			c.codegenExprTopLevel(f, x.Body)
 		} else {
@@ -127,7 +148,7 @@ func (c *Codegen) codegen(outfs fs.FS, x ast.Node) {
 	}
 }
 
-func (c *Codegen) codegenExprTopLevel(f fsx.WriteableFile, x ast.Node) {
+func (c *packageCodegen) codegenExprTopLevel(f fsx.WriteableFile, x ast.Node) {
 	switch x := x.(type) {
 	case *ast.Block:
 		for _, elem := range x.Body {
@@ -136,16 +157,16 @@ func (c *Codegen) codegenExprTopLevel(f fsx.WriteableFile, x ast.Node) {
 	}
 }
 
-func (c *Codegen) checkCodegenTuple(f fsx.WriteableFile, x ast.Node, dstType types2.Type, topLevel bool) string {
+func (c *packageCodegen) checkCodegenTuple(f fsx.WriteableFile, x ast.Node, dstType types2.Type, topLevel bool) string {
 	ttup := c.checker.GetType(x)
 	vars := c.codegenExpr(f, x, topLevel)
 	if c.checker.GoConvertible(dstType, ttup) { // TODO: equivalent
 		return vars[0]
 	}
-	return fmt.Sprintf("*(*%s)(%s.Pointer(&%s))", typeString(dstType), c.unsafeImport, vars[0])
+	return fmt.Sprintf("*(*%s)(%s.Pointer(&%s))", typeString(dstType), c.importUnique["unsafe"], vars[0])
 }
 
-func (c *Codegen) checkCodegenBinExp(f fsx.WriteableFile, x ast.Node, dstType types2.Type, topLevel bool) string {
+func (c *packageCodegen) checkCodegenBinExp(f fsx.WriteableFile, x ast.Node, dstType types2.Type, topLevel bool) string {
 	switch x := x.(type) {
 	case *ast.Number:
 		return x.Lit.Data
@@ -158,7 +179,7 @@ func (c *Codegen) checkCodegenBinExp(f fsx.WriteableFile, x ast.Node, dstType ty
 	}
 }
 
-func (c *Codegen) codegenExpr(f fsx.WriteableFile, x ast.Node, topLevel bool) []string {
+func (c *packageCodegen) codegenExpr(f fsx.WriteableFile, x ast.Node, topLevel bool) []string {
 	switch x := x.(type) {
 	case *ast.Block:
 		tblk := c.checker.GetType(x)
@@ -303,6 +324,20 @@ func (c *Codegen) codegenExpr(f fsx.WriteableFile, x ast.Node, topLevel bool) []
 		bvar := c.checker.FreshName("")
 		fmt.Fprintf(f, "var %s %s = %s %s %s\n", bvar.Name.Data, goTBin, left, opString(x.Op.Type), right)
 		return []string{bvar.Name.Data}
+	case *ast.SelectorExpr:
+		// check if from package
+		if pkgname, _, ok := c.checker.CheckPackageDef(x); ok {
+			// get name of package
+			return []string{fmt.Sprintf("%s.%s", c.importUnique[pkgname], x.Name.Name.Data)}
+			// def.
+			// _, _ = pkgname, def
+		}
+		v := c.checkCodegenBinExp(f, x.X, c.checker.GetType(x.X), topLevel)
+		tn := c.checker.GetType(x)
+		nvar := c.checker.FreshName("").Name.Data
+		fmt.Fprintf(f, "var %s %s = %s.%s\n", nvar, tn, v, x.Name.Name.Data)
+		return []string{nvar}
+		// otherwise from record
 	case *ast.Number:
 		nvar := c.checker.FreshName("")
 		fmt.Fprintf(f, "var %s %s = %s\n", nvar.Name.Data, typeString(c.checker.GetType(x)), x.Lit.Data)
@@ -380,12 +415,15 @@ func (c *Codegen) codegenExpr(f fsx.WriteableFile, x ast.Node, topLevel bool) []
 		fmt.Fprint(f, "}\n")
 		return []string{nvar.Name.Data}
 
-		// this is probably context-dependent
-		// panic("codegen: unhandled tuple")
-		// if expr == nil {
-		// 	panic("codegen: unhandled tuple")
-		// }
-		// return c.codegenExpr(f, expr, topLevel)
+	// this is probably context-dependent
+	// panic("codegen: unhandled tuple")
+	// if expr == nil {
+	// 	panic("codegen: unhandled tuple")
+	// }
+	// return c.codegenExpr(f, expr, topLevel)
+	case *ast.ImportDecl:
+		// I don't think i need to do anything here?
+		return nil
 	}
 	panic(fmt.Sprintf("unhandled node: %T", x))
 }

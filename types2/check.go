@@ -9,6 +9,7 @@ import (
 	"github.com/smasher164/gflat/ast"
 	"github.com/smasher164/gflat/lexer"
 	"github.com/smasher164/gflat/parser"
+	"golang.org/x/exp/slices"
 	"golang.org/x/mod/module"
 )
 
@@ -80,6 +81,7 @@ func (c *Checker) infer(x ast.Node) {
 	if _, ok := c.TryGetType(x); ok {
 		return
 	}
+OUTER:
 	switch x := x.(type) {
 	case *ast.Package:
 		for _, file := range x.PackageFiles {
@@ -264,7 +266,69 @@ func (c *Checker) infer(x ast.Node) {
 			Name: x.Name,
 			Type: c.reifyType(x.Body), // this would probably break down with recursive types
 		}
+	case *ast.ImportDecl:
+		// TODO: checking names inside
+	case *ast.SelectorExpr:
+		if _, def, ok := c.CheckPackageDef(x); ok {
+			switch def := def.(type) {
+			case VarBind:
+				c.typeOf[x] = c.GetType(def.Def)
+				break OUTER
+			case TypeBind:
+				c.typeOf[x] = c.GetType(def.Def)
+				break OUTER
+			default:
+				panic(fmt.Sprintf("unhandled bind %T", def))
+			}
+		}
+		c.infer(x.X)
+		tX := c.GetType(x.X) // TODO: generate a constraint for this field's existence
+		switch tX := tX.(type) {
+		case Tuple:
+			i := slices.IndexFunc(tX.Fields, func(f Field) bool { return f.Name != nil && f.Name.Name.Data == x.Name.Name.Data })
+			if i < 0 {
+				panic(fmt.Sprintf("no such field %q in %T", x.Name.Name.Data, tX))
+			}
+			c.typeOf[x] = tX.Fields[i].Type
+		default:
+			panic(fmt.Sprintf("unhandled selector %T", tX))
+		}
+		// if id, ok := x.X.(*ast.Ident); ok {
+		// 	b, _, ok := env.LookupStack(id.Name.Data)
+		// 	if ok {
+		// 		if b, ok := b.(PackageBind); ok {
+		// 			if pkgenv, ok := c.envOf[b.Pkg]; ok {
+		// 				if _, ok := pkgenv.LookupLocal(x.Name.Name.Data); ok {
+
+		// 				} else {
+		// 					panic(fmt.Sprintf("%q not defined in package %q", x.Name.Name.Data, id.Name.Data))
+		// 				}
+		// 			}
+		// 		}
+		// 	}
+		// }
+	default:
+		panic(fmt.Sprintf("unhandled infer %T", x))
 	}
+}
+
+func (c *Checker) CheckPackageDef(x *ast.SelectorExpr) (string, Bind, bool) {
+	if selID, ok := x.X.(*ast.Ident); ok {
+		if e, ok := c.GetEnv(x.X); ok {
+			if b, _, ok := e.LookupStack(selID.Name.Data); ok {
+				if pkgbind, ok := b.(PackageBind); ok {
+					if pkgenv, ok := c.GetEnv(pkgbind.Pkg); ok {
+						if def, ok := pkgenv.LookupLocal(x.Name.Name.Data); ok {
+							return pkgbind.Pkg.Name, def, true
+						} else {
+							panic(fmt.Sprintf("%q not defined in package %q", x.Name.Name.Data, selID.Name.Data))
+						}
+					}
+				}
+			}
+		}
+	}
+	return "", nil, false
 }
 
 func (c *Checker) check(x ast.Node, t Type) Type {
@@ -533,6 +597,25 @@ func (c *Checker) resolve(env *Env, x ast.Node) {
 			c.resolve(env, elem)
 		}
 		c.envOf[x] = env
+	case *ast.SelectorExpr:
+		c.resolve(env, x.X)
+		// if id, ok := x.X.(*ast.Ident); ok {
+		// 	b, _, ok := env.LookupStack(id.Name.Data)
+		// 	if ok {
+		// 		if b, ok := b.(PackageBind); ok {
+		// 			if pkgenv, ok := c.envOf[b.Pkg]; ok {
+		// 				if _, ok := pkgenv.LookupLocal(x.Name.Name.Data); ok {
+
+		// 				} else {
+		// 					panic(fmt.Sprintf("%q not defined in package %q", x.Name.Name.Data, id.Name.Data))
+		// 				}
+		// 			}
+		// 		}
+		// 	}
+		// }
+	// if e, ok := c.envOf[x.X]; ok {
+	// 	e.
+	// }
 	// p := &packageResolver{
 	// 	Checker:      c,
 	// 	topLevelDeps: make(map[string][]string),

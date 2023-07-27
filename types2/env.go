@@ -98,3 +98,7 @@ type BaseVarBind struct {
 }
 
 func (BaseVarBind) isBind() {}
+
+// func NameOfBind(b Bind) string {
+// 	switch b := b.(type) {}
+// }
