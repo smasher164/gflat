@@ -144,6 +144,13 @@ func Test(t *testing.T) {
 		let z3 = (a = 2, b = 4)
 		let z4 = z3.a
 		`},
+		{"b/test02.gf", `
+		package b
+
+		type A =
+			| B
+			| C int
+		`},
 		// {"a/test9.gf", `
 		// package a
 

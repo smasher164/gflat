@@ -65,7 +65,9 @@ type Unresolved struct{}
 
 func (Unresolved) isBind() {}
 
-type ConsBind struct{}
+type ConsBind struct {
+	Def ast.Node
+}
 
 func (ConsBind) isBind() {}
 

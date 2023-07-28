@@ -36,7 +36,9 @@ func TestFile(t *testing.T) {
 	// open file ?> ctx $"could not open {file}" |> readFile
 	// `}})
 	fsys := fsx.TestFS([][2]string{{"test.gf", `
-	let x : (a: int, b: bool)
+	type A =
+		| B
+		| C int
 	`}})
 	// fsys := fstest.MapFS{
 	// 	"test.gf": &fstest.MapFile{

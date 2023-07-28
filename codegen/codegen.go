@@ -1,9 +1,12 @@
 package codegen
 
 import (
+	"bytes"
 	"fmt"
 	"go/format"
+	"io"
 	"io/fs"
+	"math/bits"
 	"os"
 	"path"
 	"strconv"
@@ -132,12 +135,20 @@ func (c *packageCodegen) codegen(outfs fs.FS, x ast.Node) {
 				fmt.Fprintf(f, "import %s %q\n", freshImp, imp)
 			}
 		}
+		buf := new(bytes.Buffer)
 		if _, ok := x.Imports["unsafe"]; !ok {
 			unsafeImport := c.checker.FreshName("unsafe").Name.Data
 			c.importUnique["unsafe"] = unsafeImport
 			fmt.Fprintf(f, "import %s \"unsafe\"\n", unsafeImport)
-			fmt.Fprintf(f, "type _ = %s.Pointer\n", unsafeImport)
+			fmt.Fprintf(buf, "type _ = %s.Pointer\n", unsafeImport)
 		}
+		if _, ok := x.Imports["math/bits"]; !ok {
+			bitsImport := c.checker.FreshName("bits").Name.Data
+			c.importUnique["bits"] = bitsImport
+			fmt.Fprintf(f, "import %s \"math/bits\"\n", bitsImport)
+			fmt.Fprintf(buf, "type _ = %s.UintSize\n", bitsImport)
+		}
+		io.Copy(f, buf)
 		if x.PackageName != nil {
 			c.codegenExprTopLevel(f, x.Body)
 		} else {
@@ -176,6 +187,51 @@ func (c *packageCodegen) checkCodegenBinExp(f fsx.WriteableFile, x ast.Node, dst
 		return c.checkCodegenBinExp(f, x.X, dstType, topLevel)
 	default:
 		return c.checkCodegenTuple(f, x, dstType, topLevel)
+	}
+}
+
+func tagSizeType(x int) string {
+	tagSize := bits.UintSize - bits.LeadingZeros(uint(x-1))
+	switch {
+	case tagSize == 0:
+		panic("unreachable")
+	case tagSize <= 8:
+		return "uint8"
+	case tagSize <= 16:
+		return "uint16"
+	case tagSize <= 32:
+		return "uint32"
+	case tagSize <= 64:
+		return "uint64"
+	}
+	panic("unreachable")
+
+	// local typedefs in go can't be mutually recursive
+}
+
+func (c *packageCodegen) codegenMaxSize(f fsx.WriteableFile, max string, variants []types2.Variant, topLevel bool) string {
+	if max == "" {
+		a, b := variants[0], variants[1]
+		asize := c.checker.FreshName("size").Name.Data
+		bsize := c.checker.FreshName("size").Name.Data
+		diff := c.checker.FreshName("diff").Name.Data
+		max = c.checker.FreshName("max").Name.Data
+		fmt.Fprintf(f, "const %s = int64(%s.Sizeof(*new(%s)))\n", asize, c.importUnique["unsafe"], typeString(a.Type))
+		fmt.Fprintf(f, "const %s = int64(%s.Sizeof(*new(%s)))\n", bsize, c.importUnique["unsafe"], typeString(b.Type))
+		fmt.Fprintf(f, "const %s = %s - %s\n", diff, asize, bsize)
+		fmt.Fprintf(f, "const %s = %s - %s * ((%s>>(%s.UintSize-1))&1)\n", max, asize, diff, diff, c.importUnique["bits"])
+		return c.codegenMaxSize(f, max, variants[2:], topLevel)
+	} else if len(variants) == 0 {
+		return max
+	} else {
+		curr := variants[0]
+		size := c.checker.FreshName("size").Name.Data
+		diff := c.checker.FreshName("diff").Name.Data
+		newmax := c.checker.FreshName("max").Name.Data
+		fmt.Fprintf(f, "const %s = int64(%s.Sizeof(*new(%s)))\n", size, c.importUnique["unsafe"], typeString(curr.Type))
+		fmt.Fprintf(f, "const %s = %s - %s\n", diff, size, max)
+		fmt.Fprintf(f, "const %s = %s - %s * ((%s>>(%s.UintSize-1))&1)\n", newmax, size, diff, diff, c.importUnique["bits"])
+		return c.codegenMaxSize(f, newmax, variants[1:], topLevel)
 	}
 }
 
@@ -248,7 +304,23 @@ func (c *packageCodegen) codegenExpr(f fsx.WriteableFile, x ast.Node, topLevel b
 		tname := x.Name.Name.Data
 		t := c.checker.GetType(x)
 		if t, ok := t.(types2.Named); ok {
-			fmt.Fprintf(f, "type %s %s\n", tname, typeString(t.Type))
+			if sum, ok := t.Type.(types2.Sum); ok {
+				if len(sum.Variants) == 1 {
+					fmt.Fprintf(f, "type %s struct { storage %s }\n", tname, sum.Variants[0].Tag.Name.Data)
+				} else {
+					maxVar := c.codegenMaxSize(f, "", sum.Variants, topLevel)
+					tagType := tagSizeType(len(sum.Variants))
+					fmt.Fprintf(f, "type %s struct { tag %s; storage [%s]byte }\n", tname, tagType, maxVar)
+				}
+				// generate each variant type now
+				// TODO: recursion will require unsafe.Pointer
+				// self-reference will also require fresh names to be valid
+				for _, variant := range sum.Variants {
+					fmt.Fprintf(f, "type %s %s\n", variant.Tag.Name.Data, typeString(variant.Type))
+				}
+			} else {
+				fmt.Fprintf(f, "type %s %s\n", tname, typeString(t.Type))
+			}
 			return nil
 		}
 		// if e, ok := c.checker.GetEnv(x); ok {
@@ -489,7 +561,6 @@ func typeString(t types2.Type) string {
 		buf := new(strings.Builder)
 		buf.WriteString("struct{")
 		for i, f := range t.Fields {
-			// TODO: f.Name
 			var fname string
 			if f.Name == nil {
 				fname = fmt.Sprintf("F%d", i)

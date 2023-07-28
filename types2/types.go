@@ -119,3 +119,12 @@ type Named struct {
 	Name *ast.Ident
 	Type Type
 }
+
+type Sum struct {
+	Variants []Variant
+}
+
+type Variant struct {
+	Tag  *ast.Ident
+	Type Type
+}

@@ -411,6 +411,23 @@ func (c *Checker) reifyType(t ast.Node) Type {
 	case *ast.TypeDecl:
 		c.infer(t)
 		return c.typeOf[t]
+	case *ast.SumType:
+		variants := make([]Variant, len(t.Elements))
+		for i, elem := range t.Elements {
+			variants[i] = c.reifyType(elem).(Variant)
+		}
+		return Sum{variants}
+	case *ast.SumTypeElement:
+		var typ Type
+		if t.Type == nil {
+			typ = Unit
+		} else {
+			typ = c.reifyType(t.Type)
+		}
+		return Variant{
+			Tag:  t.Name,
+			Type: typ,
+		}
 	}
 	panic(fmt.Sprintf("TODO: reifyType %T", t))
 }
@@ -825,10 +842,26 @@ func (c *Checker) resolveTypeBody(curr *Env, T ast.Node) {
 		if _, ok := curr.LookupLocal(fname); ok {
 			panic("field already defined")
 		}
+		c.envOf[T.Name] = curr
 		c.AddSymbol(curr, fname, VarBind{Def: T.Name}) // what kind of binding is this?
 		c.resolveTypeBody(curr, T.Type)
+	case *ast.SumType:
+		sumScope := curr.AddScope()
+		for _, elem := range T.Elements {
+			c.resolveTypeBody(sumScope, elem)
+		}
+	case *ast.SumTypeElement:
+		if _, ok := curr.LookupLocal(T.Name.Name.Data); ok {
+			panic("constructor already defined")
+		} else {
+			c.envOf[T.Name] = curr
+			c.AddSymbol(curr, T.Name.Name.Data, ConsBind{T.Name})
+		}
+		if T.Type != nil {
+			c.resolveTypeBody(curr, T.Type)
+		}
 	default:
-		panic("TODO")
+		panic(fmt.Sprintf("resolveTypeBody %T", T))
 	}
 	c.envOf[T] = curr
 }

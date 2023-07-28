@@ -783,7 +783,7 @@ func (s *SumType) ASTString(depth int) string {
 
 type SumTypeElement struct {
 	Or   lexer.Token
-	Name Node
+	Name *Ident
 	Type Node
 }
 
