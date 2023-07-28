@@ -216,8 +216,8 @@ func (c *packageCodegen) codegenMaxSize(f fsx.WriteableFile, max string, variant
 		bsize := c.checker.FreshName("size").Name.Data
 		diff := c.checker.FreshName("diff").Name.Data
 		max = c.checker.FreshName("max").Name.Data
-		fmt.Fprintf(f, "const %s = int64(%s.Sizeof(*new(%s)))\n", asize, c.importUnique["unsafe"], typeString(a.Type))
-		fmt.Fprintf(f, "const %s = int64(%s.Sizeof(*new(%s)))\n", bsize, c.importUnique["unsafe"], typeString(b.Type))
+		fmt.Fprintf(f, "const %s = int64(%s.Sizeof(*new(%s)))\n", asize, c.importUnique["unsafe"], a.Tag.Name.Data)
+		fmt.Fprintf(f, "const %s = int64(%s.Sizeof(*new(%s)))\n", bsize, c.importUnique["unsafe"], b.Tag.Name.Data)
 		fmt.Fprintf(f, "const %s = %s - %s\n", diff, asize, bsize)
 		fmt.Fprintf(f, "const %s = %s - %s * ((%s>>(%s.UintSize-1))&1)\n", max, asize, diff, diff, c.importUnique["bits"])
 		return c.codegenMaxSize(f, max, variants[2:], topLevel)
@@ -228,7 +228,7 @@ func (c *packageCodegen) codegenMaxSize(f fsx.WriteableFile, max string, variant
 		size := c.checker.FreshName("size").Name.Data
 		diff := c.checker.FreshName("diff").Name.Data
 		newmax := c.checker.FreshName("max").Name.Data
-		fmt.Fprintf(f, "const %s = int64(%s.Sizeof(*new(%s)))\n", size, c.importUnique["unsafe"], typeString(curr.Type))
+		fmt.Fprintf(f, "const %s = int64(%s.Sizeof(*new(%s)))\n", size, c.importUnique["unsafe"], curr.Tag.Name.Data)
 		fmt.Fprintf(f, "const %s = %s - %s\n", diff, size, max)
 		fmt.Fprintf(f, "const %s = %s - %s * ((%s>>(%s.UintSize-1))&1)\n", newmax, size, diff, diff, c.importUnique["bits"])
 		return c.codegenMaxSize(f, newmax, variants[1:], topLevel)

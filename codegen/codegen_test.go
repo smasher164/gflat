@@ -150,6 +150,7 @@ func Test(t *testing.T) {
 		type A =
 			| B
 			| C int
+			| D (a: int, b: int)
 		`},
 		// {"a/test9.gf", `
 		// package a
