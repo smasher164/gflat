@@ -146,7 +146,7 @@ func (c *packageCodegen) codegen(outfs fs.FS, x ast.Node) {
 			bitsImport := c.checker.FreshName("bits").Name.Data
 			c.importUnique["bits"] = bitsImport
 			fmt.Fprintf(f, "import %s \"math/bits\"\n", bitsImport)
-			fmt.Fprintf(buf, "type _ = %s.UintSize\n", bitsImport)
+			fmt.Fprintf(buf, "const _ = %s.UintSize\n", bitsImport)
 		}
 		io.Copy(f, buf)
 		if x.PackageName != nil {
