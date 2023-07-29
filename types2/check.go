@@ -260,13 +260,20 @@ OUTER:
 	case *ast.Tuple:
 		// If it's a length 1 tuple with no trailing comma, it's just the type of the element
 		// TODO: does this take into account assignments and stuff?
-		// if elem, ok := c.CheckTupleParam(x); ok {
-		// 	c.infer(elem.X)
-		// 	tX := c.GetType(elem.X)
-		// 	c.typeOf[elem] = tX
-		// 	c.typeOf[x] = tX
-		// 	break
-		// }
+		if elem, ok := c.CheckTupleParam(x); ok {
+			if binExp, ok := elem.X.(*ast.BinaryExpr); ok && binExp.Op.Type == lexer.Assign {
+				if _, isIdent := binExp.Left.(*ast.Ident); isIdent {
+					goto inner
+				}
+			}
+			c.infer(elem.X)
+			tX := c.GetType(elem.X)
+			c.typeOf[elem] = tX
+			c.typeOf[x] = tX
+			break
+
+		}
+	inner:
 		fields := make([]Field, len(x.Elements))
 		for i, elem := range x.Elements {
 			if assignExp, ok := c.CheckAssignElem(elem); ok {
@@ -523,7 +530,6 @@ func (c *Checker) simpleEquals(a, b Type) bool {
 	return false
 }
 
-// TODO: maybe just repurpose unify?
 func (c *Checker) GoConvertible(a, b Type) bool {
 	if c.simpleEquals(a, b) {
 		return true
