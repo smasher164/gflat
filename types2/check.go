@@ -151,14 +151,22 @@ OUTER:
 		// get its type
 		e := c.envOf[x]
 		if b, _, ok := e.LookupStack(x.Name.Data); ok {
-			if b, ok := b.(BaseVarBind); ok {
+			switch b := b.(type) {
+			case TypeBind:
+				// is this okay?
+				c.typeOf[x] = c.GetType(b.Def)
+				break OUTER
+			case BaseTypeBind:
+				// is this okay?
 				c.typeOf[x] = b.Type
-				break
-			}
-			if b, ok := b.(VarBind); ok {
+				break OUTER
+			case BaseVarBind:
+				c.typeOf[x] = b.Type
+				break OUTER
+			case VarBind:
 				if t, ok := c.TryGetType(b.Def); ok {
 					c.typeOf[x] = t
-					break
+					break OUTER
 				}
 			}
 		}
@@ -294,6 +302,7 @@ OUTER:
 				c.typeOf[x] = c.GetType(def.Def)
 				break OUTER
 			case TypeBind:
+				// is this okay?
 				c.typeOf[x] = c.GetType(def.Def)
 				break OUTER
 			default:
@@ -312,23 +321,75 @@ OUTER:
 		default:
 			panic(fmt.Sprintf("unhandled selector %T", tX))
 		}
-		// if id, ok := x.X.(*ast.Ident); ok {
-		// 	b, _, ok := env.LookupStack(id.Name.Data)
-		// 	if ok {
-		// 		if b, ok := b.(PackageBind); ok {
-		// 			if pkgenv, ok := c.envOf[b.Pkg]; ok {
-		// 				if _, ok := pkgenv.LookupLocal(x.Name.Name.Data); ok {
+	// if id, ok := x.X.(*ast.Ident); ok {
+	// 	b, _, ok := env.LookupStack(id.Name.Data)
+	// 	if ok {
+	// 		if b, ok := b.(PackageBind); ok {
+	// 			if pkgenv, ok := c.envOf[b.Pkg]; ok {
+	// 				if _, ok := pkgenv.LookupLocal(x.Name.Name.Data); ok {
 
-		// 				} else {
-		// 					panic(fmt.Sprintf("%q not defined in package %q", x.Name.Name.Data, id.Name.Data))
-		// 				}
-		// 			}
-		// 		}
-		// 	}
-		// }
+	// 				} else {
+	// 					panic(fmt.Sprintf("%q not defined in package %q", x.Name.Name.Data, id.Name.Data))
+	// 				}
+	// 			}
+	// 		}
+	// 	}
+	// }
+	case *ast.CallExpr:
+		// just constructors for now.
+		// TODO: function application
+		// TODO: constructors without namespace (so straight up ident)
+		switch caller := x.Elements[0].(type) {
+		case *ast.SelectorExpr:
+			if _, tX, ok := c.CheckTypeSel(caller.X); ok {
+				if tX, ok := tX.(Named); ok {
+					if sum, ok := tX.Type.(Sum); ok {
+						// check that caller.Name is a valid constructor
+						i := slices.IndexFunc(sum.Variants, func(v Variant) bool { return v.Tag.Name.Data == caller.Name.Name.Data })
+						if i < 0 {
+							panic(fmt.Sprintf("constructor %s not found in type %s", caller.Name.Name.Data, tX.Name.Name.Data))
+						}
+						variant := sum.Variants[i]
+						// now we typecheck the application
+						// there shouldn't be more than 2 elements in the call unless there's generics right?
+						c.check(x.Elements[1], variant.Type)
+						// the type of the entire expression should be the type of the sum
+						c.typeOf[x] = tX
+						// we're done here
+						break OUTER
+					}
+				}
+			}
+		}
+		panic("unhandled CallExpr")
 	default:
 		panic(fmt.Sprintf("unhandled infer %T", x))
 	}
+}
+
+// probably not taking into account
+func (c *Checker) CheckTypeSel(x ast.Node) (Bind, Type, bool) {
+	switch x := x.(type) {
+	case *ast.Ident:
+		if e, ok := c.GetEnv(x); ok {
+			if b, _, ok := e.LookupStack(x.Name.Data); ok {
+				switch b := b.(type) {
+				case TypeBind:
+					return b, c.GetType(b.Def), true
+				case BaseTypeBind:
+					return b, b.Type, true
+				}
+			}
+		}
+	case *ast.SelectorExpr:
+		if _, def, ok := c.CheckPackageDef(x); ok {
+			switch def := def.(type) {
+			case TypeBind:
+				return def, c.GetType(def.Def), true
+			}
+		}
+	}
+	return nil, nil, false
 }
 
 func (c *Checker) CheckPackageDef(x *ast.SelectorExpr) (string, Bind, bool) {
@@ -471,6 +532,12 @@ func (c *Checker) GoConvertible(a, b Type) bool {
 		return c.GoConvertible(a.Type, b)
 	}
 	if b, ok := b.(Named); ok {
+		return c.GoConvertible(a, b.Type)
+	}
+	if a, ok := a.(Variant); ok {
+		return c.GoConvertible(a.Type, b)
+	}
+	if b, ok := b.(Variant); ok {
 		return c.GoConvertible(a, b.Type)
 	}
 	if a, ok := a.(Tuple); ok {
@@ -661,6 +728,13 @@ func (c *Checker) resolve(env *Env, x ast.Node) {
 		c.envOf[x] = env
 	case *ast.SelectorExpr:
 		c.resolve(env, x.X)
+	case *ast.CallExpr:
+		for _, elem := range x.Elements {
+			c.resolve(env, elem)
+		}
+		c.envOf[x] = env
+		// TODO: if the first element is a constructor
+
 		// if id, ok := x.X.(*ast.Ident); ok {
 		// 	b, _, ok := env.LookupStack(id.Name.Data)
 		// 	if ok {

@@ -147,6 +147,8 @@ func TestInferExpression(t *testing.T) {
 		type A =
 			| B
 			| C int
+		
+		let x = A.B()
 		`},
 		// {"a/test19.gf", `
 		// package a

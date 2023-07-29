@@ -17,6 +17,7 @@ import (
 	"github.com/smasher164/gflat/lexer"
 	"github.com/smasher164/gflat/parser"
 	"github.com/smasher164/gflat/types2"
+	"golang.org/x/exp/slices"
 	"golang.org/x/mod/module"
 )
 
@@ -142,12 +143,12 @@ func (c *packageCodegen) codegen(outfs fs.FS, x ast.Node) {
 			fmt.Fprintf(f, "import %s \"unsafe\"\n", unsafeImport)
 			fmt.Fprintf(buf, "type _ = %s.Pointer\n", unsafeImport)
 		}
-		if _, ok := x.Imports["math/bits"]; !ok {
-			bitsImport := c.checker.FreshName("bits").Name.Data
-			c.importUnique["bits"] = bitsImport
-			fmt.Fprintf(f, "import %s \"math/bits\"\n", bitsImport)
-			fmt.Fprintf(buf, "const _ = %s.UintSize\n", bitsImport)
-		}
+		// if _, ok := x.Imports["math/bits"]; !ok {
+		// 	bitsImport := c.checker.FreshName("bits").Name.Data
+		// 	c.importUnique["bits"] = bitsImport
+		// 	fmt.Fprintf(f, "import %s \"math/bits\"\n", bitsImport)
+		// 	fmt.Fprintf(buf, "const _ = %s.UintSize\n", bitsImport)
+		// }
 		io.Copy(f, buf)
 		if x.PackageName != nil {
 			c.codegenExprTopLevel(f, x.Body)
@@ -271,6 +272,23 @@ func (c *packageCodegen) codegenExpr(f fsx.WriteableFile, x ast.Node, topLevel b
 		// fmt.Fprintf(f, "\n")
 		fmt.Fprintf(f, "_ = %s\n", vars[0])
 		return []string{"_"}
+	case *ast.CallExpr:
+		if tX, ok := c.checker.GetType(x).(types2.Named); ok {
+			if sum, ok := tX.Type.(types2.Sum); ok {
+				if caller, ok := x.Elements[0].(*ast.SelectorExpr); ok {
+					if _, _, ok := c.checker.CheckTypeSel(caller.X); ok {
+						i := slices.IndexFunc(sum.Variants, func(v types2.Variant) bool { return v.Tag.Name.Data == caller.Name.Name.Data })
+						variant := sum.Variants[i]
+						// actually generate code for the constructor
+						nvar := c.checker.FreshName("").Name.Data
+						v := c.checkCodegenBinExp(f, x.Elements[1], variant, topLevel)
+						fmt.Fprintf(f, "var %s %s = %s\n", nvar, variant.ConsName, v)
+						return []string{nvar}
+						// return []string{c.checkCodegenBinExp(f, x.Elements[1], variant, topLevel)}
+					}
+				}
+			}
+		}
 	case *ast.LetDecl:
 		tlet := c.checker.GetType(x.Destructure)
 		goTLet := typeString(tlet)
@@ -563,6 +581,8 @@ func typeString(t types2.Type) string {
 		if t.Ref.Bound {
 			return typeString(t.Ref.Type)
 		}
+	case types2.Variant:
+		return t.ConsName
 	case types2.Tuple:
 		buf := new(strings.Builder)
 		buf.WriteString("struct{")

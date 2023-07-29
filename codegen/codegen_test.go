@@ -151,7 +151,10 @@ func Test(t *testing.T) {
 			| B
 			| C int
 			| D (a: int, b: int)
+
+		let x = A.D (a = 2, b = 4)
 		`},
+
 		// {"a/test9.gf", `
 		// package a
 
