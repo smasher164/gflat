@@ -260,13 +260,13 @@ OUTER:
 	case *ast.Tuple:
 		// If it's a length 1 tuple with no trailing comma, it's just the type of the element
 		// TODO: does this take into account assignments and stuff?
-		if elem, ok := c.CheckTupleParam(x); ok {
-			c.infer(elem.X)
-			tX := c.GetType(elem.X)
-			c.typeOf[elem] = tX
-			c.typeOf[x] = tX
-			break
-		}
+		// if elem, ok := c.CheckTupleParam(x); ok {
+		// 	c.infer(elem.X)
+		// 	tX := c.GetType(elem.X)
+		// 	c.typeOf[elem] = tX
+		// 	c.typeOf[x] = tX
+		// 	break
+		// }
 		fields := make([]Field, len(x.Elements))
 		for i, elem := range x.Elements {
 			if assignExp, ok := c.CheckAssignElem(elem); ok {
@@ -562,7 +562,11 @@ func (c *Checker) GoConvertible(a, b Type) bool {
 					return false
 				}
 			}
+		} else {
+			return false
 		}
+	} else {
+		return false
 	}
 	return true
 }
@@ -634,9 +638,81 @@ func (c *Checker) unify(a, b Type) Type {
 				}
 			}
 			return Tuple{Fields: nf}
+		} else {
+			if len(tup1.Fields) == 1 {
+				return c.unify(tup1.Fields[0].Type, b)
+			}
+		}
+	} else if tup2, ok := b.(Tuple); ok {
+		if len(tup2.Fields) == 1 {
+			return c.unify(a, tup2.Fields[0].Type)
 		}
 	}
 	panic(fmt.Sprintf("TODO: unify %s %s", a, b))
+}
+
+func checkUnderlyingTuple(t Type) (res Tuple, b bool) {
+	switch t := t.(type) {
+	case Named:
+		return checkUnderlyingTuple(t.Type)
+	case Variant:
+		return checkUnderlyingTuple(t.Type)
+	case Tuple:
+		return t, true
+	default:
+		return
+	}
+}
+
+// does not attempt to do unification
+// assumes typevars are bound
+func (c *Checker) typeEquals(a, b Type) bool {
+	a, b = c.get(a), c.get(b)
+	if c.simpleEquals(a, b) {
+		return true
+	}
+	if nom, ok := a.(Named); ok {
+		if _, ok := b.(Named); !ok {
+			return c.typeEquals(nom.Type, b)
+		}
+	} else if nom, ok := b.(Named); ok {
+		return c.typeEquals(a, nom.Type)
+	}
+	// how to handle unordered inferred tuple?
+	// punt that till we have row variables.
+	if tup1, ok := a.(Tuple); ok {
+		if tup2, ok := b.(Tuple); ok {
+			if len(tup1.Fields) != len(tup2.Fields) {
+				return false
+			}
+			for i := range tup1.Fields {
+				f1 := tup1.Fields[i]
+				f2 := tup2.Fields[i]
+				if f1.Name != nil && f2.Name != nil {
+					if f1.Name.Name.Data != f2.Name.Name.Data {
+						return false
+					}
+				}
+				if !c.typeEquals(tup1.Fields[i].Type, tup2.Fields[i].Type) {
+					return false
+				}
+			}
+			return true
+		}
+	}
+	return false
+}
+
+// should be called after unify
+func (c *Checker) RankPromotable(a, b Type) bool {
+	if ta, ok := checkUnderlyingTuple(a); ok {
+		if len(ta.Fields) == 1 {
+			ft := ta.Fields[0].Type
+			// check that ft and b are equal
+			return c.typeEquals(ft, b)
+		}
+	}
+	return false
 }
 
 // type packageResolver struct {
