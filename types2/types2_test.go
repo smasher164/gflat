@@ -11,144 +11,158 @@ import (
 
 func TestInferExpression(t *testing.T) {
 	fsys := fsx.TestFS([][2]string{
-		// {"a/test01.gf", `
-		// package a
+		{"a/test01.gf", `
+		package a
 
-		// let a : int = 1 + 2 + 3
-		// `},
-		// {"a/test02.gf", `
-		// package a
+		let a : int = 1 + 2 + 3
+		`},
+		{"a/test02.gf", `
+		package a
 
-		// let b : int = { 1 }
-		// `},
-		// {"a/test03.gf", `
-		// package a
+		let b : int = { 1 }
+		`},
+		{"a/test03.gf", `
+		package a
 
-		// let c = 1 + 2 + 3
-		// `},
-		// {"a/test04.gf", `
-		// package a
+		let c = 1 + 2 + 3
+		`},
+		{"a/test04.gf", `
+		package a
 
-		// let d = "hello " + "world"
-		// `},
-		// {"a/test05.gf", `
-		// package a
+		let d = "hello " + "world"
+		`},
+		{"a/test05.gf", `
+		package a
 
-		// let e = 1 < 2
-		// `},
-		// {"a/test06.gf", `
-		// package a
+		let e = 1 < 2
+		`},
+		{"a/test06.gf", `
+		package a
 
-		// let f = true && false
-		// `},
-		// {"a/test07.gf", `
-		// package a
+		let f = true && false
+		`},
+		{"a/test07.gf", `
+		package a
 
-		// let g = if (true) 1 else 2
-		// `},
-		// {"a/test08.gf", `
-		// package a
+		let g = if (true) 1 else 2
+		`},
+		{"a/test08.gf", `
+		package a
 
-		// let h = {
-		// 	if (true) 1 else 2
-		// }
-		// `},
-		// {"a/test09.gf", `
-		// package a
+		let h = {
+			if (true) 1 else 2
+		}
+		`},
+		{"a/test09.gf", `
+		package a
 
-		// let i = if (true) { 1 } else { 2 }
-		// `},
-		// {"a/test10.gf", `
-		// package a
+		let i = if (true) { 1 } else { 2 }
+		`},
+		{"a/test10.gf", `
+		package a
 
-		// let j = if (true) {
-		// 	1;
-		// }
-		// `},
-		// {"a/test11.gf", `
-		// package a
+		let j = if (true) {
+			1;
+		}
+		`},
+		{"a/test11.gf", `
+		package a
 
-		// type foo = int
-		// type bar = int
+		type foo = int
+		type bar = int
 
-		// let k : foo = 0
-		// let l : bar = 1
-		// `},
-		// {"a/test12.gf", `
-		// package a
+		let k : foo = 0
+		let l : bar = 1
+		`},
+		{"a/test12.gf", `
+		package a
 
-		// let m : int = 0
-		// let n = m
-		// `},
-		// {"a/test13.gf", `
-		// package a
+		let m : int = 0
+		let n = m
+		`},
+		{"a/test13.gf", `
+		package a
 
-		// let o : (int, int) = (0, 0)
-		// `},
-		// {"a/test14.gf", `
-		// package a
+		let o : (int, int) = (0, 0)
+		`},
+		{"a/test14.gf", `
+		package a
 
-		// type Foo = (int, int)
-		// let p : Foo = (0, 0)
-		// `},
-		// {"a/test15.gf", `
-		// package a
+		type Foo = (int, int)
+		let p : Foo = (0, 0)
+		`},
+		{"a/test15.gf", `
+		package a
 
-		// let q = (2, 4)[0]
-		// `},
-		// {"a/test16.gf", `
-		// package a
+		let q = (2, 4)[0]
+		`},
+		{"a/test16.gf", `
+		package a
 
-		// let r : (a: int, b: int) = (2, 4)
-		// let s = r[0]
-		// `},
-		// {"a/test17.gf", `
-		// package a
+		let r : (a: int, b: int) = (2, 4)
+		let s = r[0]
+		`},
+		{"a/test17.gf", `
+		package a
 
-		// let t : (a: int, b: int) = (2, 4)
-		// let u = if (true) t else (1, 2)
-		// let v = if (true) (1, 2) else t
-		// `},
-		// {"a/test18.gf", `
-		// package a
+		let t : (a: int, b: int) = (2, 4)
+		let u = if (true) t else (1, 2)
+		let v = if (true) (1, 2) else t
+		`},
+		{"a/test18.gf", `
+		package a
 
-		// let w = ((1, 2), 3)
-		// let x = w[0][1]
-		// `},
-		// {"b/test01.gf", `
-		// package b
+		let w = ((1, 2), 3)
+		let x = w[0][1]
+		`},
+		{"b/test01.gf", `
+		package b
 
-		// let Foo = 1
-		// `},
-		// {"a/test19.gf", `
-		// package a
+		let Foo = 1
+		`},
+		{"a/test19.gf", `
+		package a
 
-		// import "b"
+		import "b"
 
-		// let y = {
-		// 	b.Foo
-		// }
-		// `},
-		// {"a/test20.gf", `
-		// package a
+		let y = {
+			b.Foo
+		}
+		`},
+		{"a/test20.gf", `
+		package a
 
-		// let z : (a: int, b: int) = (2, 4)
-		// let z2 = z.b
-		// `},
-		// {"a/test21.gf", `
-		// package a
+		let z : (a: int, b: int) = (2, 4)
+		let z2 = z.b
+		`},
+		{"a/test21.gf", `
+		package a
 
-		// let z3 = (a = 2, b = 4)
-		// let z4 = z3.a
-		// `},
+		let z3 = (a = 2, b = 4)
+		let z4 = z3.a
+		`},
 		{"b/test02.gf", `
 		package b
 
 		type A =
 			| B
 			| C int
-		
-		let x = A.B()
+			| D (a: int, b: int)
+
+		let x = A.D (a = 2, b = 4)
+		`},
+		{"b/test03.gf", `
+		package b
+
+		type E =
+			| F
+			| G (x: int)
+
+		let e = E.G (x = 3,)
+
+		let pm = if(e)
+		| F => 1
+		| G _ => 2
 		`},
 		// {"a/test19.gf", `
 		// package a
