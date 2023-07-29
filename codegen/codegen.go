@@ -492,9 +492,15 @@ func (c *packageCodegen) codegenExpr(f fsx.WriteableFile, x ast.Node, topLevel b
 		return c.codegenExpr(f, x.X, topLevel)
 	case *ast.Tuple:
 		// Just handling the 1-tuple with no trailing comma case for now
-		// if elem, ok := c.checker.CheckTupleParam(x); ok {
-		// 	return c.codegenExpr(f, elem.X, topLevel)
-		// }
+		if elem, ok := c.checker.CheckTupleParam(x); ok {
+			if binExp, ok := elem.X.(*ast.BinaryExpr); ok && binExp.Op.Type == lexer.Assign {
+				if _, isIdent := binExp.Left.(*ast.Ident); isIdent {
+					goto inner
+				}
+			}
+			return c.codegenExpr(f, elem.X, topLevel)
+		}
+	inner:
 		var vars []string
 		for _, elem := range x.Elements {
 			if assignExp, ok := c.checker.CheckAssignElem(elem); ok {
