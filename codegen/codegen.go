@@ -185,10 +185,16 @@ func (c *packageCodegen) checkCodegenBinExp(f fsx.WriteableFile, x ast.Node, dst
 	case *ast.BasicString:
 		return x.Lit.Data
 	case *ast.CommaElement:
+		// is this right?
 		return c.checkCodegenBinExp(f, x.X, dstType, topLevel)
 	default:
 		return c.checkCodegenTuple(f, x, dstType, topLevel)
 	}
+}
+
+func (c *packageCodegen) checkCodegenPromote(f fsx.WriteableFile, x ast.Node, dstType types2.Type, topLevel bool) string {
+	v := c.checkCodegenBinExp(f, x, dstType, topLevel)
+	return c.promoteCodegenTuple(f, dstType, c.checker.GetType(x), v)
 }
 
 func tagSizeType(x int) string {
@@ -281,12 +287,10 @@ func (c *packageCodegen) codegenExpr(f fsx.WriteableFile, x ast.Node, topLevel b
 						variant := sum.Variants[i]
 						// actually generate code for the constructor
 						nvar := c.checker.FreshName("").Name.Data
-						argType := c.checker.GetType(x.Elements[1])
-						v := c.checkCodegenBinExp(f, x.Elements[1], variant, topLevel)
-						// if !c.checker.GoConvertible(variant, argType) {
-						// 	v = c.promoteCodegenTuple(variant, argType, v)
-						// }
-						v = c.promoteCodegenTuple(f, variant, argType, v)
+						// argType := c.checker.GetType(x.Elements[1])
+						v := c.checkCodegenPromote(f, x.Elements[1], variant, topLevel)
+						// v := c.checkCodegenBinExp(f, x.Elements[1], variant, topLevel)
+						// v = c.promoteCodegenTuple(f, variant, argType, v)
 						fmt.Fprintf(f, "var %s %s = %s\n", nvar, variant.ConsName, v)
 						return []string{nvar}
 						// return []string{c.checkCodegenBinExp(f, x.Elements[1], variant, topLevel)}
@@ -297,7 +301,7 @@ func (c *packageCodegen) codegenExpr(f fsx.WriteableFile, x ast.Node, topLevel b
 	case *ast.LetDecl:
 		tlet := c.checker.GetType(x.Destructure)
 		goTLet := typeString(tlet)
-		rhs := c.checkCodegenBinExp(f, x.Rhs, tlet, topLevel)
+		rhs := c.checkCodegenPromote(f, x.Rhs, tlet, topLevel)
 		// switch r := x.Rhs.(type) {
 		// case *ast.Number:
 		// 	rhs = r.Lit.Data
@@ -401,7 +405,7 @@ func (c *packageCodegen) codegenExpr(f fsx.WriteableFile, x ast.Node, topLevel b
 	case *ast.BinaryExpr:
 		// if left or right is a constant, we don't need temporaries
 		var left string
-		left = c.checkCodegenBinExp(f, x.Left, c.checker.GetType(x.Left), topLevel)
+		left = c.checkCodegenPromote(f, x.Left, c.checker.GetType(x.Left), topLevel)
 		// switch l := x.Left.(type) {
 		// case *ast.Number:
 		// 	left = l.Lit.Data
@@ -411,7 +415,7 @@ func (c *packageCodegen) codegenExpr(f fsx.WriteableFile, x ast.Node, topLevel b
 		// 	left = c.codegenExpr(f, x.Left, topLevel)[0]
 		// }
 		var right string
-		right = c.checkCodegenBinExp(f, x.Right, c.checker.GetType(x.Right), topLevel)
+		right = c.checkCodegenPromote(f, x.Right, c.checker.GetType(x.Right), topLevel)
 		// switch r := x.Right.(type) {
 		// case *ast.Number:
 		// 	right = r.Lit.Data
@@ -433,7 +437,7 @@ func (c *packageCodegen) codegenExpr(f fsx.WriteableFile, x ast.Node, topLevel b
 			// def.
 			// _, _ = pkgname, def
 		}
-		v := c.checkCodegenBinExp(f, x.X, c.checker.GetType(x.X), topLevel)
+		v := c.checkCodegenPromote(f, x.X, c.checker.GetType(x.X), topLevel)
 		tn := c.checker.GetType(x)
 		nvar := c.checker.FreshName("").Name.Data
 		fmt.Fprintf(f, "var %s %s = %s.%s\n", nvar, tn, v, x.Name.Name.Data)
@@ -505,9 +509,9 @@ func (c *packageCodegen) codegenExpr(f fsx.WriteableFile, x ast.Node, topLevel b
 		for _, elem := range x.Elements {
 			if assignExp, ok := c.checker.CheckAssignElem(elem); ok {
 				elem := assignExp.Right
-				vars = append(vars, c.checkCodegenBinExp(f, elem, c.checker.GetType(elem), topLevel))
+				vars = append(vars, c.checkCodegenPromote(f, elem, c.checker.GetType(elem), topLevel))
 			} else {
-				vars = append(vars, c.checkCodegenBinExp(f, elem, c.checker.GetType(elem), topLevel))
+				vars = append(vars, c.checkCodegenPromote(f, elem, c.checker.GetType(elem), topLevel))
 			}
 		}
 		if len(vars) != len(x.Elements) {

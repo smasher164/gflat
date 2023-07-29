@@ -163,6 +163,11 @@ func Test(t *testing.T) {
 
 		let e = E.G (x = 3)
 		`},
+		{"b/test04.gf", `
+		package b
+
+		let q : (a: int) = 3
+		`},
 
 		// {"a/test9.gf", `
 		// package a
