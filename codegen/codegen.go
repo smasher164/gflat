@@ -305,19 +305,25 @@ func (c *packageCodegen) codegenExpr(f fsx.WriteableFile, x ast.Node, topLevel b
 		t := c.checker.GetType(x)
 		if t, ok := t.(types2.Named); ok {
 			if sum, ok := t.Type.(types2.Sum); ok {
-				if len(sum.Variants) == 1 {
-					fmt.Fprintf(f, "type %s struct { storage %s }\n", tname, sum.Variants[0].Tag.Name.Data)
-				} else {
-					maxVar := c.codegenMaxSize(f, "", sum.Variants, topLevel)
-					tagType := tagSizeType(len(sum.Variants))
-					fmt.Fprintf(f, "type %s struct { tag %s; storage [%s]byte }\n", tname, tagType, maxVar)
-				}
-				// generate each variant type now
-				// TODO: recursion will require unsafe.Pointer
-				// self-reference will also require fresh names to be valid
+				ifaceMethodName := c.checker.FreshName("").Name.Data
+				fmt.Fprintf(f, "type %s interface { %s() }\n", tname, ifaceMethodName)
 				for _, variant := range sum.Variants {
-					fmt.Fprintf(f, "type %s %s\n", variant.Tag.Name.Data, typeString(variant.Type))
+					fmt.Fprintf(f, "type %s %s\n", variant.ConsName, typeString(variant.Type))
+					fmt.Fprintf(f, "func (%s) %s() {}\n", variant.ConsName, ifaceMethodName)
 				}
+				// if len(sum.Variants) == 1 {
+				// 	fmt.Fprintf(f, "type %s struct { storage %s }\n", tname, sum.Variants[0].Tag.Name.Data)
+				// } else {
+				// 	maxVar := c.codegenMaxSize(f, "", sum.Variants, topLevel)
+				// 	tagType := tagSizeType(len(sum.Variants))
+				// 	fmt.Fprintf(f, "type %s struct { tag %s; storage [%s]byte }\n", tname, tagType, maxVar)
+				// }
+				// // generate each variant type now
+				// // TODO: recursion will require unsafe.Pointer
+				// // self-reference will also require fresh names to be valid
+				// for _, variant := range sum.Variants {
+				// 	fmt.Fprintf(f, "type %s %s\n", variant.Tag.Name.Data, typeString(variant.Type))
+				// }
 			} else {
 				fmt.Fprintf(f, "type %s %s\n", tname, typeString(t.Type))
 			}

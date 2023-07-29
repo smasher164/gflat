@@ -125,6 +125,7 @@ type Sum struct {
 }
 
 type Variant struct {
-	Tag  *ast.Ident
-	Type Type
+	Tag      *ast.Ident // for provenance
+	ConsName string
+	Type     Type
 }

@@ -424,10 +424,18 @@ func (c *Checker) reifyType(t ast.Node) Type {
 		} else {
 			typ = c.reifyType(t.Type)
 		}
-		return Variant{
-			Tag:  t.Name,
-			Type: typ,
+		if e, ok := c.GetEnv(t.Name); ok {
+			if b, ok := e.LookupLocal(t.Name.Name.Data); ok {
+				if cons, ok := b.(ConsBind); ok {
+					return Variant{
+						Tag:      t.Name,
+						ConsName: cons.ConsName,
+						Type:     typ,
+					}
+				}
+			}
 		}
+		panic("not a valid constructor")
 	}
 	panic(fmt.Sprintf("TODO: reifyType %T", t))
 }
@@ -819,7 +827,7 @@ func (c *Checker) defineLet(packageScope, curr *Env, des ast.Node) {
 	}
 }
 
-func (c *Checker) resolveTypeBody(curr *Env, T ast.Node) {
+func (c *Checker) resolveTypeBody(tname string, curr *Env, T ast.Node) {
 	switch T := T.(type) {
 	case *ast.Ident:
 		if _, _, ok := curr.LookupStack(T.Name.Data); ok {
@@ -832,10 +840,10 @@ func (c *Checker) resolveTypeBody(curr *Env, T ast.Node) {
 		for _, elem := range T.Elements {
 			// should we create a scope here?
 			// how do we treat labels?
-			c.resolveTypeBody(paramScope, elem)
+			c.resolveTypeBody(tname, paramScope, elem)
 		}
 	case *ast.CommaElement:
-		c.resolveTypeBody(curr, T.X)
+		c.resolveTypeBody(tname, curr, T.X)
 	case *ast.Field:
 		// TODO: default parameters
 		fname := T.Name.Name.Data
@@ -844,21 +852,27 @@ func (c *Checker) resolveTypeBody(curr *Env, T ast.Node) {
 		}
 		c.envOf[T.Name] = curr
 		c.AddSymbol(curr, fname, VarBind{Def: T.Name}) // what kind of binding is this?
-		c.resolveTypeBody(curr, T.Type)
+		c.resolveTypeBody(tname, curr, T.Type)
 	case *ast.SumType:
 		sumScope := curr.AddScope()
 		for _, elem := range T.Elements {
-			c.resolveTypeBody(sumScope, elem)
+			c.resolveTypeBody(tname, sumScope, elem)
 		}
 	case *ast.SumTypeElement:
+		consName := tname + "_" + T.Name.Name.Data
 		if _, ok := curr.LookupLocal(T.Name.Name.Data); ok {
 			panic("constructor already defined")
+		} else if _, ok := curr.parent.parent.LookupLocal(consName); ok {
+			panic("name collision with constructor name")
 		} else {
 			c.envOf[T.Name] = curr
-			c.AddSymbol(curr, T.Name.Name.Data, ConsBind{T.Name})
+			b := ConsBind{T.Name, consName}
+			c.AddSymbol(curr, T.Name.Name.Data, b)
+			c.AddSymbol(curr.parent.parent, consName, b)
+			c.fileOf[consName] = curr.parent.parent
 		}
 		if T.Type != nil {
-			c.resolveTypeBody(curr, T.Type)
+			c.resolveTypeBody(tname, curr, T.Type)
 		}
 	default:
 		panic(fmt.Sprintf("resolveTypeBody %T", T))
@@ -867,7 +881,7 @@ func (c *Checker) resolveTypeBody(curr *Env, T ast.Node) {
 }
 
 func (c *Checker) resolveTypeAnnotation(curr *Env, T ast.Node) {
-	c.resolveTypeBody(curr, T)
+	c.resolveTypeBody("", curr, T)
 	// switch T := T.(type) {
 	// case *ast.Ident:
 	// 	if _, _, ok := curr.LookupStack(T.Name.Data); ok {
@@ -888,7 +902,7 @@ func (c *Checker) defineType(packageScope, curr *Env, typeDecl *ast.TypeDecl) {
 	bind := TypeBind{Def: typeDecl}
 	c.AddSymbol(packageScope, tname, bind)
 	bodyScope := curr.AddScope()
-	c.resolveTypeBody(bodyScope, typeDecl.Body)
+	c.resolveTypeBody(tname, bodyScope, typeDecl.Body)
 }
 
 func (c *Checker) resolveTopLevelDecl(packageScope, curr *Env, x ast.Node) {
