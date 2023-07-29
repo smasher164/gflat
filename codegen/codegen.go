@@ -281,7 +281,12 @@ func (c *packageCodegen) codegenExpr(f fsx.WriteableFile, x ast.Node, topLevel b
 						variant := sum.Variants[i]
 						// actually generate code for the constructor
 						nvar := c.checker.FreshName("").Name.Data
+						argType := c.checker.GetType(x.Elements[1])
 						v := c.checkCodegenBinExp(f, x.Elements[1], variant, topLevel)
+						// if !c.checker.GoConvertible(variant, argType) {
+						// 	v = c.promoteCodegenTuple(variant, argType, v)
+						// }
+						v = c.promoteCodegenTuple(f, variant, argType, v)
 						fmt.Fprintf(f, "var %s %s = %s\n", nvar, variant.ConsName, v)
 						return []string{nvar}
 						// return []string{c.checkCodegenBinExp(f, x.Elements[1], variant, topLevel)}
@@ -487,9 +492,9 @@ func (c *packageCodegen) codegenExpr(f fsx.WriteableFile, x ast.Node, topLevel b
 		return c.codegenExpr(f, x.X, topLevel)
 	case *ast.Tuple:
 		// Just handling the 1-tuple with no trailing comma case for now
-		if elem, ok := c.checker.CheckTupleParam(x); ok {
-			return c.codegenExpr(f, elem.X, topLevel)
-		}
+		// if elem, ok := c.checker.CheckTupleParam(x); ok {
+		// 	return c.codegenExpr(f, elem.X, topLevel)
+		// }
 		var vars []string
 		for _, elem := range x.Elements {
 			if assignExp, ok := c.checker.CheckAssignElem(elem); ok {
@@ -522,6 +527,31 @@ func (c *packageCodegen) codegenExpr(f fsx.WriteableFile, x ast.Node, topLevel b
 		return nil
 	}
 	panic(fmt.Sprintf("unhandled node: %T", x))
+}
+
+func checkUnderlyingTuple(t types2.Type) (res types2.Tuple, b bool) {
+	switch t := t.(type) {
+	case types2.Named:
+		return checkUnderlyingTuple(t.Type)
+	case types2.Variant:
+		return checkUnderlyingTuple(t.Type)
+	case types2.Tuple:
+		return t, true
+	default:
+		return
+	}
+}
+
+func (c *packageCodegen) promoteCodegenTuple(f fsx.WriteableFile, dst, src types2.Type, pvar string) string {
+	// check that it needs to be promoted a rank
+	if c.checker.RankPromotable(dst, src) {
+		nvar := c.checker.FreshName("").Name.Data
+		fmt.Fprintf(f, "var %s = %s{%s}\n", nvar, typeString(dst), pvar)
+		return nvar
+	}
+	return pvar
+	// guessing that src needs to be promoted one rank
+	// src
 }
 
 func opString(t lexer.TokenType) string {
