@@ -132,7 +132,6 @@ type Variant struct {
 
 type PatternState struct {
 	Covered  bool
-	Variants map[string]struct{}
 	Children []*PatternState
 }
 
@@ -143,10 +142,12 @@ func newPatternState(t Type) *PatternState {
 		for _, f := range t.Fields {
 			ps.Children = append(ps.Children, newPatternState(f.Type))
 		}
+		return ps
 	case Sum:
 		ps := new(PatternState)
 		for _, v := range t.Variants {
-			ps.addVariant(v.ConsName)
+			// ps.addVariant(v.ConsName)
+			ps.Children = append(ps.Children, newPatternState(v.Type))
 		}
 		return ps
 	case Named:
@@ -161,9 +162,9 @@ func newPatternState(t Type) *PatternState {
 	panic("unreachable")
 }
 
-func (ps *PatternState) addVariant(s string) {
-	if ps.Variants == nil {
-		ps.Variants = make(map[string]struct{})
-	}
-	ps.Variants[s] = struct{}{}
-}
+// func (ps *PatternState) addVariant(s string) {
+// 	if ps.Variants == nil {
+// 		ps.Variants = make(map[string]struct{})
+// 	}
+// 	ps.Variants[s] = struct{}{}
+// }

@@ -108,14 +108,19 @@ OUTER:
 						if i < 0 {
 							panic(fmt.Sprintf("constructor %s not found in type %s", caller.Name.Name.Data, tX.Name.Name.Data))
 						}
-						variant := sum.Variants[i]
-						delete(ps.Variants, variant.ConsName)
-						if len(ps.Variants) == 0 {
-							ps.Covered = true
-						}
+						// variant := sum.Variants[i]
+						c.inferPat(ps.Children[i], pat.Elements[1])
+						// ps.Children[i].Covered = true
+						// this only make sense if type is covered too.
+						// still need to validate that all are covered
+
+						// if len(ps.Variants) == 0 {
+						// 	ps.Covered = true
+						// }
+
 						// now we typecheck the application
 						// there shouldn't be more than 2 elements in the call unless there's generics right?
-						c.check(pat.Elements[1], variant.Type)
+						// c.check(pat.Elements[1], variant.Type)
 						// the type of the entire expression should be the type of the sum
 						c.typeOf[pat] = tX
 						// we're done here
@@ -176,13 +181,16 @@ OUTER:
 						panic(fmt.Sprintf("constructor %s not found in type %s", pat.Name.Name.Data, tX.Name.Name.Data))
 					}
 					variant := sum.Variants[i]
-					delete(ps.Variants, variant.ConsName)
-					if len(ps.Variants) == 0 {
-						ps.Covered = true
-					}
+					c.unify(Unit, variant.Type)
+					ps.Covered = true
+
+					// delete(ps.Variants, variant.ConsName)
+					// if len(ps.Variants) == 0 {
+					// 	ps.Covered = true
+					// }
 					// now we typecheck the application
 					// there shouldn't be more than 2 elements in the call unless there's generics right?
-					c.unify(Unit, variant.Type)
+					// c.unify(Unit, variant.Type)
 					// the type of the entire expression should be the type of the sum
 					c.typeOf[pat] = tX
 					// we're done here
@@ -241,9 +249,19 @@ OUTER:
 				uncovered = true
 			}
 		}
+		c.typeOf[pat] = Tuple{f}
 		if !uncovered {
 			ps.Covered = true
 		}
+	}
+	var uncovered bool
+	for i := range ps.Children {
+		if !ps.Children[i].Covered {
+			uncovered = true
+		}
+	}
+	if !uncovered {
+		ps.Covered = true
 	}
 }
 
