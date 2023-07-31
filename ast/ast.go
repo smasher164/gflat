@@ -284,6 +284,18 @@ type Block struct {
 	RightBrace lexer.Token
 }
 
+func printCaseSlice(depth int, nodes []*PatternCase) string {
+	if len(nodes) == 0 {
+		return "[]"
+	}
+	s := fmt.Sprintf("[\n%s", indent(depth+1))
+	for _, n := range nodes {
+		s += fmt.Sprintf("%s\n%s", n.ASTString(depth+1), indent(depth+1))
+	}
+	s += "]"
+	return s
+}
+
 func printNodeSlice(depth int, nodes []Node) string {
 	if len(nodes) == 0 {
 		return "[]"
@@ -968,7 +980,7 @@ func (p *PatternCase) ASTString(depth int) string {
 type IfMatch struct {
 	IfHeader   Node
 	LeftBrace  lexer.Token
-	Cases      []Node
+	Cases      []*PatternCase
 	RightBrace lexer.Token
 }
 
@@ -984,11 +996,11 @@ func (i *IfMatch) ASTString(depth int) string {
 	if i.LeftBrace.Type == lexer.LeftBrace {
 		return fmt.Sprintf(
 			"IfMatch\n%sIfHeader: %s\n%sLeftBrace: %s\n%sCases: %s\n%sRightBrace: %s", indent(depth+1), i.IfHeader.ASTString(depth+1), indent(depth+1),
-			i.LeftBrace, indent(depth+1), printNodeSlice(depth+1, i.Cases), indent(depth+1), i.RightBrace)
+			i.LeftBrace, indent(depth+1), printCaseSlice(depth+1, i.Cases), indent(depth+1), i.RightBrace)
 	}
 	return fmt.Sprintf(
 		"IfMatch\n%sIfHeader: %s\n%sCases: %s", indent(depth+1), i.IfHeader.ASTString(depth+1), indent(depth+1),
-		printNodeSlice(depth+1, i.Cases))
+		printCaseSlice(depth+1, i.Cases))
 }
 
 type BasicString struct {

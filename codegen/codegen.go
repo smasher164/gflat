@@ -31,7 +31,7 @@ package/subpackage -> package/subpackage
 don't rely on concurrent writes right now, until the in-memory fs can be made thread-safe
 */
 
-const formatSource = true
+const formatSource = false
 
 type Codegen struct {
 	// assumes we have a resolved and typed build
@@ -437,6 +437,27 @@ func (c *packageCodegen) codegenExpr(f fsx.WriteableFile, x ast.Node, topLevel b
 			// def.
 			// _, _ = pkgname, def
 		}
+
+		if tX, ok := c.checker.GetType(x).(types2.Named); ok {
+			if sum, ok := tX.Type.(types2.Sum); ok {
+				caller := x
+				if _, _, ok := c.checker.CheckTypeSel(caller.X); ok {
+					i := slices.IndexFunc(sum.Variants, func(v types2.Variant) bool { return v.Tag.Name.Data == caller.Name.Name.Data })
+					variant := sum.Variants[i]
+					// actually generate code for the constructor
+					// nvar := c.checker.FreshName("").Name.Data
+					// // argType := c.checker.GetType(x.Elements[1])
+
+					// v := c.checkCodegenPromote(f, x.Elements[1], variant, topLevel)
+					// // v := c.checkCodegenBinExp(f, x.Elements[1], variant, topLevel)
+					// // v = c.promoteCodegenTuple(f, variant, argType, v)
+					// fmt.Fprintf(f, "var %s %s = %s\n", nvar, variant.ConsName, v)
+					return []string{fmt.Sprintf("*new(%s)", variant.ConsName)}
+					// return []string{c.checkCodegenBinExp(f, x.Elements[1], variant, topLevel)}
+				}
+			}
+		}
+
 		v := c.checkCodegenPromote(f, x.X, c.checker.GetType(x.X), topLevel)
 		tn := c.checker.GetType(x)
 		nvar := c.checker.FreshName("").Name.Data

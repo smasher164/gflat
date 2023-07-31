@@ -89,6 +89,164 @@ func (c *Checker) ProcessBuild() error {
 	return c.err
 }
 
+func (c *Checker) inferPat(ps *PatternState, pat ast.Node) {
+OUTER:
+	switch pat := pat.(type) {
+	case *ast.TypeAnnotation:
+		panic("TODO TypeAnnotation")
+	case *ast.BinaryExpr:
+		// c.resolvePattern(env, pat.Left)
+		// c.resolvePattern(env, pat.Right)
+	case *ast.CallExpr:
+		switch caller := pat.Elements[0].(type) {
+		case *ast.SelectorExpr:
+			if _, tX, ok := c.CheckTypeSel(caller.X); ok {
+				if tX, ok := tX.(Named); ok {
+					if sum, ok := tX.Type.(Sum); ok {
+						// check that caller.Name is a valid constructor
+						i := slices.IndexFunc(sum.Variants, func(v Variant) bool { return v.Tag.Name.Data == caller.Name.Name.Data })
+						if i < 0 {
+							panic(fmt.Sprintf("constructor %s not found in type %s", caller.Name.Name.Data, tX.Name.Name.Data))
+						}
+						variant := sum.Variants[i]
+						delete(ps.Variants, variant.ConsName)
+						if len(ps.Variants) == 0 {
+							ps.Covered = true
+						}
+						// now we typecheck the application
+						// there shouldn't be more than 2 elements in the call unless there's generics right?
+						c.check(pat.Elements[1], variant.Type)
+						// the type of the entire expression should be the type of the sum
+						c.typeOf[pat] = tX
+						// we're done here
+						break OUTER
+					}
+				}
+			}
+		case *ast.Ident:
+			panic("TODO")
+		}
+		// c.resolve(env, pat.Elements[0])
+		// for i := 1; i < len(pat.Elements); i++ {
+		// 	c.resolvePattern(env, pat.Elements[i])
+		// }
+		// if caller, ok := pat.Elements[0].(*ast.SelectorExpr); ok {
+		// 	switch sel := caller.X.(type) {
+		// 	case *ast.Ident:
+		// 		if b, _, ok := env.LookupStack(sel.Name.Data); ok {
+		// 			switch b.(type) {
+		// 			case TypeBind, BaseTypeBind:
+		// 				consName := sel.Name.Data + "_" + caller.Name.Name.Data
+		// 				if bc, _, ok := env.LookupStack(consName); ok {
+		// 					if bc, ok := bc.(ConsBind); ok {
+		// 						bc.
+		// 					}
+		// 				}
+		// 			}
+		// 		}
+		// 	case *ast.SelectorExpr:
+		// 	}
+		// case *ast.Ident:
+		// 	if e, ok := c.GetEnv(x); ok {
+		// 		if b, _, ok := e.LookupStack(x.Name.Data); ok {
+		// 			switch b := b.(type) {
+		// 			case TypeBind:
+		// 				return b, c.GetType(b.Def), true
+		// 			case BaseTypeBind:
+		// 				return b, b.Type, true
+		// 			}
+		// 		}
+		// 	}
+		// case *ast.SelectorExpr:
+		// 	if _, def, ok := c.CheckPackageDef(x); ok {
+		// 		switch def := def.(type) {
+		// 		case TypeBind:
+		// 			return def, c.GetType(def.Def), true
+		// 		}
+		// 	}
+		// }
+		// }
+	case *ast.SelectorExpr:
+		if _, tX, ok := c.CheckTypeSel(pat.X); ok {
+			if tX, ok := tX.(Named); ok {
+				if sum, ok := tX.Type.(Sum); ok {
+					// check that caller.Name is a valid constructor
+					i := slices.IndexFunc(sum.Variants, func(v Variant) bool { return v.Tag.Name.Data == pat.Name.Name.Data })
+					if i < 0 {
+						panic(fmt.Sprintf("constructor %s not found in type %s", pat.Name.Name.Data, tX.Name.Name.Data))
+					}
+					variant := sum.Variants[i]
+					delete(ps.Variants, variant.ConsName)
+					if len(ps.Variants) == 0 {
+						ps.Covered = true
+					}
+					// now we typecheck the application
+					// there shouldn't be more than 2 elements in the call unless there's generics right?
+					c.unify(Unit, variant.Type)
+					// the type of the entire expression should be the type of the sum
+					c.typeOf[pat] = tX
+					// we're done here
+					break
+				}
+			}
+		}
+	// could be pkg.type.cons or type.cons
+	case *ast.Ident:
+		if pat.Name.Data == "_" {
+			ps.Covered = true
+			c.typeOf[pat] = NewTypeVar(c.FreshTypeVar())
+			break
+		}
+		if e, ok := c.GetEnv(pat); ok {
+			if b, _, ok := e.LookupStack(pat.Name.Data); ok {
+				switch b.(type) {
+				case ConsBind:
+					panic("TODO")
+					// b.ConsName // somehow get the variant and the named sum type from here?
+					// tname := b.ConsName[:len(b.ConsName)-len(pat.Name.Data)-1]
+
+				case VarBind:
+					ps.Covered = true
+				}
+			}
+		}
+		// if _, ok := env.LookupLocal(pat.Name.Data); ok {
+		// 	panic("redefinition of binding")
+		// }
+		// if b, _, ok := env.LookupStack(pat.Name.Data); ok {
+		// 	if _, ok := b.(ConsBind); !ok {
+		// 		c.AddSymbol(env, pat.Name.Data, VarBind{pat})
+		// 	}
+		// }
+		// we're not allowing Ident to be a constructor.
+		// actually nullary constructors that specify C _ or C () will work.
+	case *ast.Number:
+		c.typeOf[pat] = Int
+	case *ast.BasicString:
+		c.typeOf[pat] = String
+	case *ast.InterpolatedString:
+		panic("TODO: interpolated string in pattern")
+	case *ast.Tuple:
+		if len(ps.Children) != len(pat.Elements) {
+			panic("invalid count for patter")
+		}
+		var f []Field
+		var uncovered bool
+		for i := range ps.Children {
+			elem := pat.Elements[i].(*ast.CommaElement).X
+			c.inferPat(ps.Children[i], elem)
+			c.typeOf[pat.Elements[i]] = c.typeOf[elem]
+			f = append(f, Field{Type: c.typeOf[elem]})
+			if !ps.Children[i].Covered {
+				uncovered = true
+			}
+		}
+		if !uncovered {
+			ps.Covered = true
+		}
+	}
+}
+
 // should infer handle type declarations?
 // should its type be associated in typeOf?
 func (c *Checker) infer(x ast.Node) {
@@ -257,6 +415,41 @@ OUTER:
 		c.infer(x.Cond)
 		c.typeOf[x] = c.GetType(x.Cond)
 		// should probably panic if something isn't in the typeOf map
+	case *ast.IfMatch:
+		c.infer(x.IfHeader)
+		tH := c.typeOf[x.IfHeader]
+		ps := newPatternState(tH)
+		c0 := x.Cases[0]
+		c.inferPat(ps, c0.Pattern)
+		tH = c.unify(tH, c.typeOf[c0.Pattern])
+		if c0.Guard != nil {
+			c.check(c0.Guard, Bool)
+		}
+		c.infer(c0.Expr)
+		tB := c.typeOf[c0.Expr]
+		for i := 1; i < len(x.Cases); i++ {
+			ci := x.Cases[i]
+			c.inferPat(ps, ci.Pattern)
+			tH = c.unify(tH, c.typeOf[ci.Pattern])
+			if ci.Guard != nil {
+				c.check(ci.Guard, Bool)
+			}
+			c.infer(ci.Expr)
+			tB = c.unify(tB, c.typeOf[ci.Guard])
+		}
+		if !ps.Covered {
+			panic("not exhaustive")
+		}
+		c.typeOf[x] = tB
+		// check that this is a sum type, and get its variants
+
+		// c.check(x.IfHeader, Bool)
+		// c.infer(x.Cases[0])
+		// tc0 := c.typeOf[x.Cases[0]]
+		// for i := 1; i < len(x.Cases); i++ {
+		// 	tc0 = c.check(x.Cases[i], tc0)
+		// }
+		// c.typeOf[x] = tc0
 	case *ast.Tuple:
 		// If it's a length 1 tuple with no trailing comma, it's just the type of the element
 		// TODO: does this take into account assignments and stuff?
@@ -317,17 +510,45 @@ OUTER:
 			}
 		}
 		c.infer(x.X)
-		tX := c.GetType(x.X) // TODO: generate a constraint for this field's existence
-		switch tX := tX.(type) {
-		case Tuple:
-			i := slices.IndexFunc(tX.Fields, func(f Field) bool { return f.Name != nil && f.Name.Name.Data == x.Name.Name.Data })
-			if i < 0 {
-				panic(fmt.Sprintf("no such field %q in %T", x.Name.Name.Data, tX))
+		if _, tX, ok := c.CheckTypeSel(x.X); ok {
+			switch tX := tX.(type) {
+			case Named:
+				if sum, ok := tX.Type.(Sum); ok {
+					// check that caller.Name is a valid constructor
+					i := slices.IndexFunc(sum.Variants, func(v Variant) bool { return v.Tag.Name.Data == x.Name.Name.Data })
+					if i < 0 {
+						panic(fmt.Sprintf("constructor %s not found in type %s", x.Name.Name.Data, tX.Name.Name.Data))
+					}
+					variant := sum.Variants[i]
+					// now we typecheck the application
+					// there shouldn't be more than 2 elements in the call unless there's generics right?
+					c.unify(Unit, variant.Type)
+					// the type of the entire expression should be the type of the sum
+					c.typeOf[x] = tX
+					// we're done here
+					break OUTER
+				}
+			case Tuple:
+				i := slices.IndexFunc(tX.Fields, func(f Field) bool { return f.Name != nil && f.Name.Name.Data == x.Name.Name.Data })
+				if i < 0 {
+					panic(fmt.Sprintf("no such field %q in %T", x.Name.Name.Data, tX))
+				}
+				c.typeOf[x] = tX.Fields[i].Type
+			default:
+				panic(fmt.Sprintf("unhandled selector %T", tX))
 			}
-			c.typeOf[x] = tX.Fields[i].Type
-		default:
-			panic(fmt.Sprintf("unhandled selector %T", tX))
 		}
+		// tX := c.GetType(x.X) // TODO: generate a constraint for this field's existence
+		// switch tX := tX.(type) {
+		// case Tuple:
+		// 	i := slices.IndexFunc(tX.Fields, func(f Field) bool { return f.Name != nil && f.Name.Name.Data == x.Name.Name.Data })
+		// 	if i < 0 {
+		// 		panic(fmt.Sprintf("no such field %q in %T", x.Name.Name.Data, tX))
+		// 	}
+		// 	c.typeOf[x] = tX.Fields[i].Type
+		// default:
+		// 	panic(fmt.Sprintf("unhandled selector %T", tX))
+		// }
 	// if id, ok := x.X.(*ast.Ident); ok {
 	// 	b, _, ok := env.LookupStack(id.Name.Data)
 	// 	if ok {
@@ -728,6 +949,102 @@ func (c *Checker) RankPromotable(a, b Type) bool {
 // 	pkg          parser.Package
 // }
 
+func (c *Checker) resolvePattern(env *Env, pat ast.Node) {
+	switch pat := pat.(type) {
+	case *ast.TypeAnnotation:
+		panic("TODO TypeAnnotation")
+	case *ast.BinaryExpr:
+		c.resolvePattern(env, pat.Left)
+		c.resolvePattern(env, pat.Right)
+	case *ast.CallExpr:
+		c.resolve(env, pat.Elements[0])
+		for i := 1; i < len(pat.Elements); i++ {
+			c.resolvePattern(env, pat.Elements[i])
+		}
+		// if caller, ok := pat.Elements[0].(*ast.SelectorExpr); ok {
+		// 	switch sel := caller.X.(type) {
+		// 	case *ast.Ident:
+		// 		if b, _, ok := env.LookupStack(sel.Name.Data); ok {
+		// 			switch b.(type) {
+		// 			case TypeBind, BaseTypeBind:
+		// 				consName := sel.Name.Data + "_" + caller.Name.Name.Data
+		// 				if bc, _, ok := env.LookupStack(consName); ok {
+		// 					if bc, ok := bc.(ConsBind); ok {
+		// 						bc.
+		// 					}
+		// 				}
+		// 			}
+		// 		}
+		// 	case *ast.SelectorExpr:
+		// 	}
+		// case *ast.Ident:
+		// 	if e, ok := c.GetEnv(x); ok {
+		// 		if b, _, ok := e.LookupStack(x.Name.Data); ok {
+		// 			switch b := b.(type) {
+		// 			case TypeBind:
+		// 				return b, c.GetType(b.Def), true
+		// 			case BaseTypeBind:
+		// 				return b, b.Type, true
+		// 			}
+		// 		}
+		// 	}
+		// case *ast.SelectorExpr:
+		// 	if _, def, ok := c.CheckPackageDef(x); ok {
+		// 		switch def := def.(type) {
+		// 		case TypeBind:
+		// 			return def, c.GetType(def.Def), true
+		// 		}
+		// 	}
+		// }
+		// }
+	// case *ast.SelectorExpr:
+	// we need to deal with this case.
+	// could be pkg.type.cons or type.cons
+	case *ast.Ident:
+		if _, ok := env.LookupLocal(pat.Name.Data); ok {
+			panic("redefinition of binding")
+		}
+		if b, _, ok := env.LookupStack(pat.Name.Data); ok {
+			if _, ok := b.(ConsBind); !ok {
+				c.AddSymbol(env, pat.Name.Data, VarBind{pat})
+			}
+		}
+		// we're not allowing Ident to be a constructor.
+		// actually nullary constructors that specify C _ or C () will work.
+	case *ast.Number:
+	case *ast.BasicString:
+	case *ast.InterpolatedString:
+		panic("TODO: interpolated string in pattern")
+	case *ast.Tuple:
+		for _, elem := range pat.Elements {
+			c.resolvePattern(env, elem.(*ast.CommaElement).X)
+		}
+	}
+	c.envOf[pat] = env
+}
+
+func (c *Checker) resolveMatchCase(env *Env, pc *ast.PatternCase) {
+	// we have to figure out what names are introduced by the pattern
+	// unfortunately, with something like
+	// if(x)
+	// | Y =>
+	// we can't actually know if Y is a constructor or variable without knowing the type of x.
+	// it's okay to delay resolution of this, since
+
+	// we will ignore the above case for now.
+	// if there is a constructor, it *must* be namespaced.
+	// so A.B, not B
+	// may have to turn this phase into a lazy thing, where inference calls the resolver.
+	// envOf can be a lazily computed map.
+
+	c.resolvePattern(env, pc.Pattern)
+	if pc.Guard != nil {
+		c.resolve(env, pc.Guard)
+	}
+	c.resolve(env, pc.Expr)
+	c.envOf[pc] = env
+}
+
 func (c *Checker) resolve(env *Env, x ast.Node) {
 	switch x := x.(type) {
 	case *ast.Package:
@@ -776,6 +1093,12 @@ func (c *Checker) resolve(env *Env, x ast.Node) {
 	case *ast.IfHeader:
 		c.resolve(env, x.Cond)
 		c.envOf[x] = env
+	case *ast.IfMatch:
+		c.resolve(env, x.IfHeader)
+		for _, pc := range x.Cases {
+			c.resolveMatchCase(env.AddScope(), pc)
+		}
+		c.envOf[x] = env
 	case *ast.Tuple:
 		_, isTupleParam := c.CheckTupleParam(x)
 		var hasAssign bool
@@ -810,12 +1133,12 @@ func (c *Checker) resolve(env *Env, x ast.Node) {
 		c.envOf[x] = env
 	case *ast.SelectorExpr:
 		c.resolve(env, x.X)
+		c.envOf[x.Name] = env
 	case *ast.CallExpr:
 		for _, elem := range x.Elements {
 			c.resolve(env, elem)
 		}
 		c.envOf[x] = env
-		// TODO: if the first element is a constructor
 
 		// if id, ok := x.X.(*ast.Ident); ok {
 		// 	b, _, ok := env.LookupStack(id.Name.Data)

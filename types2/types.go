@@ -129,3 +129,41 @@ type Variant struct {
 	ConsName string
 	Type     Type
 }
+
+type PatternState struct {
+	Covered  bool
+	Variants map[string]struct{}
+	Children []*PatternState
+}
+
+func newPatternState(t Type) *PatternState {
+	switch t := t.(type) {
+	case Tuple:
+		ps := new(PatternState)
+		for _, f := range t.Fields {
+			ps.Children = append(ps.Children, newPatternState(f.Type))
+		}
+	case Sum:
+		ps := new(PatternState)
+		for _, v := range t.Variants {
+			ps.addVariant(v.ConsName)
+		}
+		return ps
+	case Named:
+		return newPatternState(t.Type)
+	case TypeVar:
+		if t.Ref.Bound {
+			return newPatternState(t.Ref.Type)
+		}
+	case Base:
+		return new(PatternState)
+	}
+	panic("unreachable")
+}
+
+func (ps *PatternState) addVariant(s string) {
+	if ps.Variants == nil {
+		ps.Variants = make(map[string]struct{})
+	}
+	ps.Variants[s] = struct{}{}
+}

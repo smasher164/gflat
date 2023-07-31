@@ -654,7 +654,7 @@ func (p *parser) parseIfMatch(ifHeader ast.IfHeader) ast.Node {
 		setRbrace = true
 		p.next()
 	}
-	var cases []ast.Node
+	var cases []*ast.PatternCase
 	for p.tok.Type == lexer.Or {
 		c := p.parseCase(&ifMatch, setRbrace)
 		cases = append(cases, c)
@@ -671,7 +671,7 @@ func (p *parser) parseIfMatch(ifHeader ast.IfHeader) ast.Node {
 	return &ifMatch
 }
 
-func (p *parser) parseCase(ifMatch *ast.IfMatch, setRbrace bool) ast.Node {
+func (p *parser) parseCase(ifMatch *ast.IfMatch, setRbrace bool) *ast.PatternCase {
 	defer p.trace("parseCase")()
 	var patCase ast.PatternCase
 	patCase.Or = p.tok
