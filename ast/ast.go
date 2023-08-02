@@ -978,7 +978,7 @@ func (p *PatternCase) ASTString(depth int) string {
 }
 
 type IfMatch struct {
-	IfHeader   Node
+	IfHeader   *IfHeader
 	LeftBrace  lexer.Token
 	Cases      []*PatternCase
 	RightBrace lexer.Token

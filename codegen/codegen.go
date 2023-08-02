@@ -31,7 +31,7 @@ package/subpackage -> package/subpackage
 don't rely on concurrent writes right now, until the in-memory fs can be made thread-safe
 */
 
-const formatSource = false
+const formatSource = true
 
 type Codegen struct {
 	// assumes we have a resolved and typed build
@@ -556,8 +556,142 @@ func (c *packageCodegen) codegenExpr(f fsx.WriteableFile, x ast.Node, topLevel b
 	case *ast.ImportDecl:
 		// I don't think i need to do anything here?
 		return nil
+	case *ast.IfMatch:
+		thead := c.checker.GetType(x.IfHeader)
+		tres := c.checker.GetType(x)
+		goTIf := typeString(tres)
+		head := c.checkCodegenPromote(f, x.IfHeader.Cond, thead, topLevel)
+		ifvar := c.checker.FreshName("").Name.Data
+		doneLabel := c.checker.FreshName("done").Name.Data
+		fmt.Fprintf(f, "var %s %s\n", ifvar, goTIf)
+		if topLevel {
+			fmt.Fprintf(f, "var _ struct{} = func() struct{} {\n")
+		}
+
+		// contents of ifmatch go here
+		for _, pc := range x.Cases {
+			c.codegenMatchCase(f, pc, thead, ifvar, head, doneLabel)
+		}
+
+		fmt.Fprintf(f, "%s:\n", doneLabel)
+		if topLevel {
+			fmt.Fprintf(f, "return struct{}{}\n")
+			fmt.Fprintf(f, "}()\n")
+		}
+		return []string{ifvar}
+		// for _, pc := range x.Cases {
+		// 	pc.
+		// }
+		// switch thead.(type) {
+		// case types2.Tuple:
+		// case types2.Sum:
+		// }
+		// naive matching now
+		// if it's a tuple, iterate over terms
+		// if it's a sum
 	}
 	panic(fmt.Sprintf("unhandled node: %T", x))
+}
+
+func underlying(t types2.Type) types2.Type {
+	if t, ok := t.(types2.Named); ok {
+		return underlying(t.Type)
+	}
+	if t, ok := t.(types2.TypeVar); ok && t.Ref.Bound {
+		return underlying(t.Ref.Type)
+	}
+	return t
+}
+
+func (c *packageCodegen) codegenMatchCase(f fsx.WriteableFile, pc *ast.PatternCase, thead types2.Type, ifvar, head, doneLabel string) {
+	// c.codegenPattern(f, pc.Pattern, head)
+	closingBraces := new(strings.Builder)
+	var codegenPattern func(ast.Node, types2.Type, string)
+	codegenPattern = func(pat ast.Node, thead types2.Type, head string) {
+		thead = underlying(thead)
+		switch pat := pat.(type) {
+		case *ast.Tuple:
+			ttup := thead.(types2.Tuple)
+			fresh := c.checker.FreshName("").Name.Data
+			tspat := typeStringIgnoreFields(ttup)
+			fmt.Fprintf(f, "var %s = *(*%s)(%s.Pointer(&%s))\n", fresh, tspat, c.importUnique["unsafe"], head)
+			fmt.Fprintf(f, "_ = %s\n", fresh)
+			for i, elem_pat := range pat.Elements {
+				codegenPattern(elem_pat.(*ast.CommaElement).X, ttup.Fields[i].Type, fresh+".F"+strconv.Itoa(i))
+			}
+		case *ast.Ident:
+			if pat.Name.Data == "_" {
+				return // is this right?
+			}
+			// assume it's a varbind for now
+			fmt.Fprintf(f, "var %s = %s\n", pat.Name.Data, head)
+			fmt.Fprintf(f, "_ = %s\n", pat.Name.Data)
+		case *ast.CallExpr:
+			switch caller := pat.Elements[0].(type) {
+			case *ast.SelectorExpr:
+				if _, tX, ok := c.checker.CheckTypeSel(caller.X); ok {
+					if tX, ok := tX.(types2.Named); ok {
+						if sum, ok := tX.Type.(types2.Sum); ok {
+							i := slices.IndexFunc(sum.Variants, func(v types2.Variant) bool { return v.Tag.Name.Data == caller.Name.Name.Data })
+							variant := sum.Variants[i]
+							fresh := c.checker.FreshName("").Name.Data
+							consName := variant.ConsName
+							fmt.Fprintf(f, "if %s, ok := %s.(%s); ok {\n", fresh, head, consName)
+							fmt.Fprintf(f, "_ = %s\n", fresh)
+							closingBraces.WriteString("\n}\n")
+							codegenPattern(pat.Elements[1], variant.Type, fresh)
+						}
+					}
+				}
+			}
+		case *ast.SelectorExpr:
+			if _, tX, ok := c.checker.CheckTypeSel(pat.X); ok {
+				if tX, ok := tX.(types2.Named); ok {
+					if sum, ok := tX.Type.(types2.Sum); ok {
+						// check that caller.Name is a valid constructor
+						i := slices.IndexFunc(sum.Variants, func(v types2.Variant) bool { return v.Tag.Name.Data == pat.Name.Name.Data })
+						variant := sum.Variants[i]
+						consName := variant.ConsName
+						fmt.Fprintf(f, "if _, ok := %s.(%s); ok {\n", head, consName)
+						closingBraces.WriteString("\n}\n")
+					}
+				}
+			}
+
+			// assume it's a constructor
+
+			// if pat.Name.Data == "_" {
+			// 	return
+			// }
+			// if e, ok := c.checker.GetEnv(pat); ok {
+			// 	if b, _, ok := e.LookupStack(pat.Name.Data); ok {
+			// 		// if vb, ok := b.(types2.VarBind); ok {
+			// 		// 	okvar := c.checker.FreshName("ok").Name.Data
+			// 		// 	fmt.Fprintf(f, "if %s, %s := ?.")
+			// 		// }
+			// 	}
+			// }
+		case *ast.Number:
+			fmt.Fprintf(f, "if %s == %s {\n", head, pat.Lit.Data)
+			closingBraces.WriteString("\n}\n")
+		case *ast.BasicString:
+			fmt.Fprintf(f, "if %s == %s {\n", head, pat.Lit.Data)
+			closingBraces.WriteString("\n}\n")
+		}
+	}
+	codegenPattern(pc.Pattern, thead, head)
+	// if pc.Guard != nil {
+	// 	condvar := c.codegenExpr(f, pc.Guard, false)[0]
+	// 	fmt.Fprintf(f, "if %s {\n", condvar)
+	// }
+	x := c.checkCodegenPromote(f, pc.Expr, c.checker.GetType(pc.Expr), false)
+	fmt.Fprintf(f, "%s = %s\n", ifvar, x)
+	fmt.Fprintf(f, "goto %s\n", doneLabel)
+	fmt.Fprint(f, closingBraces.String())
+	// if pc.Guard != nil {
+	// 	fmt.Fprintln(f, "}")
+	// }
+	// fmt.Fprint(f, del.String())
 }
 
 func checkUnderlyingTuple(t types2.Type) (res types2.Tuple, b bool) {
@@ -571,6 +705,16 @@ func checkUnderlyingTuple(t types2.Type) (res types2.Tuple, b bool) {
 	default:
 		return
 	}
+}
+
+func printCons(sel ast.Node) string {
+	switch sel := sel.(type) {
+	case *ast.SelectorExpr:
+		return printCons(sel.X) + "." + sel.Name.Name.Data
+	case *ast.Ident:
+		return sel.Name.Data
+	}
+	panic("unreachable printCons")
 }
 
 func (c *packageCodegen) promoteCodegenTuple(f fsx.WriteableFile, dst, src types2.Type, pvar string) string {
@@ -630,6 +774,17 @@ func opString(t lexer.TokenType) string {
 	default:
 		panic(fmt.Sprintf("unhandled binary op: %s", t))
 	}
+}
+
+func typeStringIgnoreFields(t types2.Tuple) string {
+	buf := new(strings.Builder)
+	buf.WriteString("struct{")
+	for i, f := range t.Fields {
+		fname := fmt.Sprintf("F%d", i)
+		fmt.Fprintf(buf, "%s %s;", fname, typeString(f.Type))
+	}
+	buf.WriteByte('}')
+	return buf.String()
 }
 
 func typeString(t types2.Type) string {

@@ -89,12 +89,25 @@ func (c *Checker) ProcessBuild() error {
 	return c.err
 }
 
-func (c *Checker) inferPat(ps *PatternState, pat ast.Node) {
+func underlying(t Type) Type {
+	if t, ok := t.(Named); ok {
+		return underlying(t.Type)
+	}
+	if t, ok := t.(TypeVar); ok && t.Ref.Bound {
+		return underlying(t.Ref.Type)
+	}
+	return t
+}
+
+func (c *Checker) inferPat(ps *PatternState, tH Type, pat ast.Node) {
 OUTER:
 	switch pat := pat.(type) {
 	case *ast.TypeAnnotation:
 		panic("TODO TypeAnnotation")
 	case *ast.BinaryExpr:
+		panic("TODO infer Or patterns")
+		// c.inferPat(ps, pat.Left)
+		// c.inferPat(ps, pat.Right)
 		// c.resolvePattern(env, pat.Left)
 		// c.resolvePattern(env, pat.Right)
 	case *ast.CallExpr:
@@ -103,13 +116,14 @@ OUTER:
 			if _, tX, ok := c.CheckTypeSel(caller.X); ok {
 				if tX, ok := tX.(Named); ok {
 					if sum, ok := tX.Type.(Sum); ok {
+						c.unify(tH, tX)
 						// check that caller.Name is a valid constructor
 						i := slices.IndexFunc(sum.Variants, func(v Variant) bool { return v.Tag.Name.Data == caller.Name.Name.Data })
 						if i < 0 {
 							panic(fmt.Sprintf("constructor %s not found in type %s", caller.Name.Name.Data, tX.Name.Name.Data))
 						}
-						// variant := sum.Variants[i]
-						c.inferPat(ps.Children[i], pat.Elements[1])
+						variant := sum.Variants[i]
+						c.inferPat(ps.Children[i], variant.Type, pat.Elements[1])
 						// ps.Children[i].Covered = true
 						// this only make sense if type is covered too.
 						// still need to validate that all are covered
@@ -122,7 +136,9 @@ OUTER:
 						// there shouldn't be more than 2 elements in the call unless there's generics right?
 						// c.check(pat.Elements[1], variant.Type)
 						// the type of the entire expression should be the type of the sum
-						c.typeOf[pat] = tX
+
+						// c.typeOf[pat] = tX
+
 						// we're done here
 						break OUTER
 					}
@@ -175,6 +191,7 @@ OUTER:
 		if _, tX, ok := c.CheckTypeSel(pat.X); ok {
 			if tX, ok := tX.(Named); ok {
 				if sum, ok := tX.Type.(Sum); ok {
+					c.unify(tX, tH)
 					// check that caller.Name is a valid constructor
 					i := slices.IndexFunc(sum.Variants, func(v Variant) bool { return v.Tag.Name.Data == pat.Name.Name.Data })
 					if i < 0 {
@@ -192,7 +209,9 @@ OUTER:
 					// there shouldn't be more than 2 elements in the call unless there's generics right?
 					// c.unify(Unit, variant.Type)
 					// the type of the entire expression should be the type of the sum
-					c.typeOf[pat] = tX
+
+					// c.typeOf[pat] = tX
+
 					// we're done here
 					break
 				}
@@ -202,7 +221,7 @@ OUTER:
 	case *ast.Ident:
 		if pat.Name.Data == "_" {
 			ps.Covered = true
-			c.typeOf[pat] = NewTypeVar(c.FreshTypeVar())
+			// c.typeOf[pat] = NewTypeVar(c.FreshTypeVar())
 			break
 		}
 		if e, ok := c.GetEnv(pat); ok {
@@ -215,6 +234,7 @@ OUTER:
 
 				case VarBind:
 					ps.Covered = true
+					// c.typeOf[pat] = NewTypeVar(c.FreshTypeVar()) // is this right?
 				}
 			}
 		}
@@ -229,27 +249,31 @@ OUTER:
 		// we're not allowing Ident to be a constructor.
 		// actually nullary constructors that specify C _ or C () will work.
 	case *ast.Number:
-		c.typeOf[pat] = Int
+		c.unify(tH, Int)
+		// c.typeOf[pat] = Int
 	case *ast.BasicString:
-		c.typeOf[pat] = String
+		c.unify(tH, String)
+		// c.typeOf[pat] = String
 	case *ast.InterpolatedString:
 		panic("TODO: interpolated string in pattern")
 	case *ast.Tuple:
 		if len(ps.Children) != len(pat.Elements) {
 			panic("invalid count for patter")
 		}
-		var f []Field
+		ttup := underlying(tH).(Tuple)
+		// var f []Field
 		var uncovered bool
 		for i := range ps.Children {
 			elem := pat.Elements[i].(*ast.CommaElement).X
-			c.inferPat(ps.Children[i], elem)
-			c.typeOf[pat.Elements[i]] = c.typeOf[elem]
-			f = append(f, Field{Type: c.typeOf[elem]})
+			c.inferPat(ps.Children[i], ttup.Fields[i].Type, elem)
+			// telem := c.typeOf[elem]
+			// c.typeOf[pat.Elements[i]] = telem
+			// f = append(f, Field{Type: telem})
 			if !ps.Children[i].Covered {
 				uncovered = true
 			}
 		}
-		c.typeOf[pat] = Tuple{f}
+		// c.typeOf[pat] = Tuple{f}
 		if !uncovered {
 			ps.Covered = true
 		}
@@ -438,8 +462,8 @@ OUTER:
 		tH := c.typeOf[x.IfHeader]
 		ps := newPatternState(tH)
 		c0 := x.Cases[0]
-		c.inferPat(ps, c0.Pattern)
-		tH = c.unify(tH, c.typeOf[c0.Pattern])
+		c.inferPat(ps, tH, c0.Pattern)
+		// tH = c.unify(tH, c.typeOf[c0.Pattern])
 		if c0.Guard != nil {
 			c.check(c0.Guard, Bool)
 		}
@@ -447,13 +471,13 @@ OUTER:
 		tB := c.typeOf[c0.Expr]
 		for i := 1; i < len(x.Cases); i++ {
 			ci := x.Cases[i]
-			c.inferPat(ps, ci.Pattern)
-			tH = c.unify(tH, c.typeOf[ci.Pattern])
+			c.inferPat(ps, tH, ci.Pattern)
+			// tH = c.unify(tH, c.typeOf[ci.Pattern])
 			if ci.Guard != nil {
 				c.check(ci.Guard, Bool)
 			}
 			c.infer(ci.Expr)
-			tB = c.unify(tB, c.typeOf[ci.Guard])
+			tB = c.unify(tB, c.typeOf[ci.Expr])
 		}
 		if !ps.Covered {
 			panic("not exhaustive")
@@ -763,6 +787,7 @@ func (c *Checker) simpleEquals(a, b Type) bool {
 	if a, ok := a.(Named); ok {
 		if b, ok := b.(Named); ok {
 			// this doesn't work for type aliases, if we add them
+			// should this peek inside?
 			return a.Name.Name.Data == b.Name.Name.Data
 		}
 	}
@@ -817,6 +842,7 @@ func (c *Checker) GoConvertible(a, b Type) bool {
 }
 
 // return the mgu
+// TODO: add sum types
 func (c *Checker) unify(a, b Type) Type {
 	a, b = c.get(a), c.get(b)
 	if c.simpleEquals(a, b) {
@@ -893,7 +919,12 @@ func (c *Checker) unify(a, b Type) Type {
 			return c.unify(a, tup2.Fields[0].Type)
 		}
 	}
-	panic(fmt.Sprintf("TODO: unify %s %s", a, b))
+	// if sum1, ok := a.(Sum); ok {
+	// 	if sum2, ok := b.(Sum); ok {
+
+	// 	}
+	// }
+	panic(fmt.Sprintf("TODO: unify %T %T", a, b))
 }
 
 func checkUnderlyingTuple(t Type) (res Tuple, b bool) {
@@ -972,8 +1003,10 @@ func (c *Checker) resolvePattern(env *Env, pat ast.Node) {
 	case *ast.TypeAnnotation:
 		panic("TODO TypeAnnotation")
 	case *ast.BinaryExpr:
-		c.resolvePattern(env, pat.Left)
-		c.resolvePattern(env, pat.Right)
+		panic("TODO: Or patterns")
+		// adding a scope so that shared bindings work?
+		// c.resolvePattern(env.AddScope(), pat.Left)
+		// c.resolvePattern(env.AddScope(), pat.Right)
 	case *ast.CallExpr:
 		c.resolve(env, pat.Elements[0])
 		for i := 1; i < len(pat.Elements); i++ {
@@ -1026,6 +1059,8 @@ func (c *Checker) resolvePattern(env *Env, pat ast.Node) {
 			if _, ok := b.(ConsBind); !ok {
 				c.AddSymbol(env, pat.Name.Data, VarBind{pat})
 			}
+		} else {
+			c.AddSymbol(env, pat.Name.Data, VarBind{pat})
 		}
 		// we're not allowing Ident to be a constructor.
 		// actually nullary constructors that specify C _ or C () will work.

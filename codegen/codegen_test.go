@@ -174,10 +174,14 @@ func Test(t *testing.T) {
 
 		type P =
 			| G (a: int, b: int)
+			| H (s: string)
 
 		let px = P.G (a = 2, b = 4)
 		let py = if(px)
-			| P.G (x, y) => 2
+			| P.G (1, y) => 1
+			| P.G (x, y) => x+y
+			| P.H "hello" => 3
+			| P.H _ => 4
 		`},
 
 		// {"a/test9.gf", `
