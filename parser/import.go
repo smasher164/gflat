@@ -27,13 +27,10 @@ func (i *Importer) importCrawl(path, scriptFile string) (err error) {
 	if err != nil {
 		return err
 	}
-	{
-		pkg := pkg.(*ast.Package)
-		for path := range pkg.Imports {
-			if _, ok := i.PkgCache[path]; !ok {
-				if err = i.importCrawl(path, ""); err != nil {
-					return err
-				}
+	for path := range pkg.(*ast.Package).Imports {
+		if _, ok := i.PkgCache[path]; !ok {
+			if err = i.importCrawl(path, ""); err != nil {
+				return err
 			}
 		}
 	}

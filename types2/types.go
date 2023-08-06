@@ -120,6 +120,13 @@ type Named struct {
 	Type Type
 }
 
+// TODO: replace with this
+// type NominalType struct {
+// 	Package string
+// 	Name    string
+// 	Type    Type
+// }
+
 type Sum struct {
 	Variants []Variant
 }
