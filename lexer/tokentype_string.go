@@ -69,21 +69,23 @@ func _() {
 	_ = x[Pub-58]
 	_ = x[With-59]
 	_ = x[Impl-60]
-	_ = x[Ident-61]
-	_ = x[Number-62]
-	_ = x[TypeArg-63]
-	_ = x[Whitespace-64]
-	_ = x[SingleLineComment-65]
-	_ = x[StringBeg-66]
-	_ = x[StringPart-67]
-	_ = x[StringEnd-68]
-	_ = x[String-69]
-	_ = x[Illegal-70]
+	_ = x[As-61]
+	_ = x[Ident-62]
+	_ = x[Number-63]
+	_ = x[TypeArg-64]
+	_ = x[Whitespace-65]
+	_ = x[SingleLineComment-66]
+	_ = x[StringBeg-67]
+	_ = x[StringPart-68]
+	_ = x[StringEnd-69]
+	_ = x[String-70]
+	_ = x[ImportPath-71]
+	_ = x[Illegal-72]
 }
 
-const _TokenType_name = "EOFLineTerminatorPlusMinusTimesDivideRemainderAndOrCaretTildeBacktickLessThanGreaterThanAssignColonNotCommaPeriodSemicolonLeftParenRightParenLeftBraceRightBraceLeftBracketRightBracketDollarSignQuestionMarkLogicalAndLogicalOrLeftShiftRightShiftPipeQuestionPipeLogicalEqualsFatArrowNotEqualsLessThanEqualsGreaterThanEqualsColonEqualsExponentiationDotDotLeftArrowRightArrowFunTypeTraitImportLetVarIfElseCaseMatchPackageIsoRefMutPubWithImplIdentNumberTypeArgWhitespaceSingleLineCommentStringBegStringPartStringEndStringIllegal"
+const _TokenType_name = "EOFLineTerminatorPlusMinusTimesDivideRemainderAndOrCaretTildeBacktickLessThanGreaterThanAssignColonNotCommaPeriodSemicolonLeftParenRightParenLeftBraceRightBraceLeftBracketRightBracketDollarSignQuestionMarkLogicalAndLogicalOrLeftShiftRightShiftPipeQuestionPipeLogicalEqualsFatArrowNotEqualsLessThanEqualsGreaterThanEqualsColonEqualsExponentiationDotDotLeftArrowRightArrowFunTypeTraitImportLetVarIfElseCaseMatchPackageIsoRefMutPubWithImplAsIdentNumberTypeArgWhitespaceSingleLineCommentStringBegStringPartStringEndStringImportPathIllegal"
 
-var _TokenType_index = [...]uint16{0, 3, 17, 21, 26, 31, 37, 46, 49, 51, 56, 61, 69, 77, 88, 94, 99, 102, 107, 113, 122, 131, 141, 150, 160, 171, 183, 193, 205, 215, 224, 233, 243, 247, 259, 272, 280, 289, 303, 320, 331, 345, 351, 360, 370, 373, 377, 382, 388, 391, 394, 396, 400, 404, 409, 416, 419, 422, 425, 428, 432, 436, 441, 447, 454, 464, 481, 490, 500, 509, 515, 522}
+var _TokenType_index = [...]uint16{0, 3, 17, 21, 26, 31, 37, 46, 49, 51, 56, 61, 69, 77, 88, 94, 99, 102, 107, 113, 122, 131, 141, 150, 160, 171, 183, 193, 205, 215, 224, 233, 243, 247, 259, 272, 280, 289, 303, 320, 331, 345, 351, 360, 370, 373, 377, 382, 388, 391, 394, 396, 400, 404, 409, 416, 419, 422, 425, 428, 432, 436, 438, 443, 449, 456, 466, 483, 492, 502, 511, 517, 527, 534}
 
 func (i TokenType) String() string {
 	if i < 0 || i >= TokenType(len(_TokenType_index)-1) {

@@ -8,6 +8,7 @@ import (
 	"path/filepath"
 	"sort"
 	"strconv"
+	"strings"
 	"unicode"
 
 	"golang.org/x/exp/slices"
@@ -25,6 +26,7 @@ type Lexer struct {
 	emittedSemi        bool
 	shouldInsertBefore bool
 	shouldInsertAfter  bool
+	lexImportPathNext  bool
 	beforeToksToCheck  []TokenType
 	afterToksToCheck   []TokenType
 	ch                 rune
@@ -65,6 +67,10 @@ func (l *Lexer) lexIdentOrKeyword(justIdent bool) Token {
 	ident := l.bufString()
 	if !justIdent {
 		if ttyp, ok := Keywords[ident]; ok {
+			// if ttyp == Import {
+			// emit the import token, but also set lexer state to know that we are importing something now
+			// l.lexImportPathNext = true // Set in parser
+			// }
 			return Token{Type: ttyp, Span: l.spanOf(startPos, l.pos-1)}
 		}
 		if l.ch == '"' {
@@ -79,6 +85,10 @@ func (l *Lexer) lexIdentOrKeyword(justIdent bool) Token {
 // string interpolation.
 // if it is greater than 1, we are inside a nested expression
 // in string interpolation.
+
+func (l *Lexer) LexImportPathNext() {
+	l.lexImportPathNext = true
+}
 
 func isDecimal(ch rune) bool { return '0' <= ch && ch <= '9' }
 func isHex(ch rune) bool {
@@ -362,7 +372,7 @@ func (l *Lexer) checkN(n int) []rune {
 	if n == 0 {
 		return nil
 	}
-	oldch := l.ch
+	// oldch := l.ch
 	dst := make([]rune, n)
 	dst[0] = l.ch
 	backupCount := -1
@@ -376,7 +386,7 @@ func (l *Lexer) checkN(n int) []rune {
 	if backupCount < 0 {
 		backupCount = n - 1
 	}
-	if backupCount > 0 || backupCount == 0 && oldch != eof {
+	if backupCount > 0 /*|| TODO: figure out what this is doing backupCount == 0 && oldch != eof */ {
 		for i := 0; i < backupCount; i++ {
 			l.backup()
 		}
@@ -484,7 +494,7 @@ func (l *Lexer) lexString(delim []rune) Token {
 		l.next()
 		if count := l.slurp('$'); count > 0 {
 			frame.dollarCount = count
-			setErr("'$' must appear before '#' on string literal")
+			setErr("'$' must appear before '\\' on string literal")
 		}
 	}
 	if len(delim) > 0 {
@@ -497,7 +507,7 @@ func (l *Lexer) lexString(delim []rune) Token {
 		setErr("delimiter must be composed of letters")
 	}
 	if l.ch != '"' {
-		setErr("'$' and '#' must only appear before quotes \"")
+		setErr("'$' and '\\' must only appear before quotes \"")
 		return tok
 	}
 	l.next()
@@ -515,6 +525,61 @@ func (l *Lexer) lexTypeArg() Token {
 	return Token{Type: TypeArg, Span: l.spanOf(startPos, id.Span.End.Offset), Data: id.Data}
 }
 
+/*
+Implementation restriction: A compiler may restrict ImportPaths
+to non-empty strings using only characters belonging to Unicode's
+L, M, N, P, and S general categories (the Graphic characters
+without spaces) and may also exclude the characters
+!"#$%&'()*,:;<=>?[\]^`{|} and the Unicode replacement character U+FFFD.
+*/
+func validImportPathChar(r rune) bool {
+	if !unicode.In(r, unicode.L, unicode.M, unicode.N, unicode.P, unicode.S) {
+		return false
+	}
+	if strings.ContainsRune(`"\`+"!#$%&'()*,:;<=>?[]^`{|}\ufffd", r) {
+		return false
+	}
+	return true
+}
+
+func (l *Lexer) lexImportPath() Token {
+	startPos := l.pos
+	for validImportPathChar(l.ch) {
+		l.next()
+	}
+	buf := l.buf[:l.i]
+	dotIndex := -1
+L:
+	for i := len(buf) - 1; i >= 0; i-- {
+		switch buf[i] {
+		case '/':
+			break L
+		case '.':
+			dotIndex = i
+		}
+	}
+	var impPath string
+	if dotIndex >= 0 {
+		impPath = string(l.buf[:dotIndex])
+		backupCount := len(buf) - dotIndex
+		for i := 0; i < backupCount; i++ {
+			l.backup()
+		}
+		/*
+					if l.i > 0 {
+				l.i--
+				l.pos--
+				l.ch = l.buf[l.i]
+			}
+		*/
+	} else {
+		impPath = string(buf)
+	}
+	l.lexImportPathNext = false
+	return Token{Type: ImportPath, Span: l.spanOf(startPos, l.pos-1), Data: impPath}
+	// bytes
+}
+
 func (l *Lexer) NextToken() Token {
 	defer l.resetPos()
 	startPos := l.pos
@@ -527,14 +592,16 @@ func (l *Lexer) NextToken() Token {
 	// 	return Token{Type: EOF, Span: l.spanOf(startPos, l.pos)}
 	case unicode.IsSpace(l.ch):
 		return l.lexWS()
+	case l.ch == '#':
+		return l.lexLineComment()
+	case l.lexImportPathNext:
+		return l.lexImportPath()
 	case isLetter(l.ch):
 		return l.lexIdentOrKeyword(false)
 	case isDecimal(l.ch) || l.ch == '.' && isDecimal(l.peek()):
 		return l.lexNumber()
 	case l.ch == '\'':
 		return l.lexTypeArg()
-	case l.ch == '#':
-		return l.lexLineComment()
 	// TODO: do we need multiline (nested) comments?
 	// what about block/doc comments?
 	// case l.ch == '/' && l.peek() == '#':

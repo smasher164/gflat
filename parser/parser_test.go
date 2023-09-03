@@ -13,12 +13,12 @@ func TestPackage(t *testing.T) {
 		{"a.gf", `
 		package a
 
-		fun f(x) => x
+		fun F(x) => x
 		`},
 		{"b.gf", `
 		package a
 
-		fun f(x) => x
+		fun G(x) => x
 		`},
 		{"c.gf", `
 		print "Hello, World!"
@@ -36,10 +36,13 @@ func TestFile(t *testing.T) {
 	// open file ?> ctx $"could not open {file}" |> readFile
 	// `}})
 	fsys := fsx.TestFS([][2]string{{"test.gf", `
-	type A =
-		| B
-		| C int
+	import path/to/package (Foo(Bar, Bar))
 	`}})
+	// fsys := fsx.TestFS([][2]string{{"test.gf", `
+	// type A =
+	// 	| B
+	// 	| C int
+	// `}})
 	// fsys := fstest.MapFS{
 	// 	"test.gf": &fstest.MapFile{
 	// Data: []byte(`;`),
@@ -170,7 +173,7 @@ func TestFile(t *testing.T) {
 	// 	},
 	// }
 	// l, err := lexer.NewLexer(, "test.txt")
-	f, err := parser.ParseFile(fsys, "test.gf")
+	f, err := parser.ParseFile(fsys, ast.NewEnv(nil), "test.gf")
 	if err != nil {
 		t.Fatal(err)
 	}

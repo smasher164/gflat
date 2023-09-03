@@ -77,6 +77,7 @@ const (
 	Pub
 	With
 	Impl
+	As
 
 	Ident
 	Number
@@ -88,6 +89,7 @@ const (
 	StringPart
 	StringEnd
 	String
+	ImportPath
 	Illegal
 )
 
@@ -159,6 +161,7 @@ var Keywords = map[string]TokenType{
 	"pub":     Pub, // these?
 	"with":    With,
 	"impl":    Impl,
+	"as":      As, // TODO: should this be contextual?
 }
 
 type Pos struct {

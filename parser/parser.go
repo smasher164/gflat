@@ -3,11 +3,12 @@ package parser
 import (
 	"fmt"
 	"io/fs"
-	"strconv"
+	"path"
 
 	"github.com/smasher164/gflat/ast"
 	"github.com/smasher164/gflat/lexer"
 	"golang.org/x/exp/maps"
+	"golang.org/x/mod/module"
 )
 
 const debug = false
@@ -22,12 +23,14 @@ type parser struct {
 	buf                []lexer.Token // rework this when you need to start backtracking.
 	indent             int
 	imports            map[string]struct{}
+	env                *ast.Env
 }
 
 type Lexer interface {
 	Next() lexer.Token
 	ShouldInsertBefore(bool, []lexer.TokenType)
 	ShouldInsertAfter(bool, []lexer.TokenType)
+	LexImportPathNext()
 }
 
 func (p *parser) shouldInsertDelimAfter(status bool, ttypes ...lexer.TokenType) {
@@ -53,20 +56,27 @@ func (p *parser) trace(msg string) func() {
 	return func() {}
 }
 
-func ParseFile(fsys fs.FS, filename string) (ast.Node, error) {
+func ParseFile(fsys fs.FS, fileEnv *ast.Env, filename string) (ast.Node, error) {
 	l, err := lexer.NewLexer(fsys, filename)
 	if err != nil {
 		return nil, err
 	}
-	return (&parser{l: l, imports: make(map[string]struct{})}).parseFile(), nil
+	p := &parser{
+		l:       l,
+		imports: make(map[string]struct{}),
+		env:     fileEnv,
+	}
+	f := p.parseFile()
+	return f, nil
 }
 
 func ParsePackage(fsys fs.FS, scriptFile string, filenames ...string) (ast.Node, error) {
 	var pkg ast.Package
 	pkg.Imports = make(map[string]struct{})
+	pkg.Env = ast.Universe.AddScope()
 	var first error
 	for _, filename := range filenames {
-		file, err := ParseFile(fsys, filename)
+		file, err := ParseFile(fsys, pkg.Env.AddScope(), filename)
 		if err != nil {
 			if first == nil {
 				first = err
@@ -91,6 +101,18 @@ func ParsePackage(fsys fs.FS, scriptFile string, filenames ...string) (ast.Node,
 					}
 				}
 				maps.Copy(pkg.Imports, file.Imports)
+				// TODO: copy over all non imported decls
+				for name, bind := range file.Env.Symbols {
+					// if name exists in pkg.Env, then it's a duplicate
+					// if bind is a package or unresolvedextern, then don't copy it over
+					// otherwise copy over and delete from file
+					switch bind.(type) {
+					case ast.PackageBind, ast.UnresolvedImportedBind:
+					default:
+						pkg.Env.Add(name, bind)
+						delete(file.Env.Symbols, name)
+					}
+				}
 			}
 		}
 	}
@@ -129,7 +151,9 @@ func (p *parser) peek2() lexer.Token {
 func (p *parser) parseFile() *ast.File {
 	defer p.trace("parseFile")()
 	p.next()
-	f := &ast.File{}
+	f := &ast.File{
+		Env: p.env,
+	}
 	if p.tok.Type == lexer.Package {
 		f.Package = p.tok
 		p.next()
@@ -1359,61 +1383,110 @@ func (p *parser) parseImportPath() *ast.BasicString {
 	panic("invalid import path")
 }
 
-func (p *parser) parseImportDeclPackage() ast.Node {
-	defer p.trace("parseImportDeclPackage")()
-	var importDecl ast.ImportDeclPackage
-	switch p.tok.Type {
-	case lexer.String:
-		path := p.parseImportPath()
-		importDecl = ast.ImportDeclPackage{Path: path}
-	case lexer.Ident:
-		alias := p.tok
-		p.next()
-		if p.tok.Type != lexer.Assign {
-			panic("missing equals")
-		}
-		equals := p.tok
-		p.next()
-		if p.tok.Type != lexer.String {
-			panic("missing string")
-		}
-		path := p.parseImportPath()
-		importDecl = ast.ImportDeclPackage{
-			Binding: &ast.Ident{Name: alias},
-			Equals:  equals,
-			Path:    path,
-		}
-	case lexer.LeftParen:
-		// tuple of identifiers
-		// tup := p.parseIdentTuple()
-		tup := p.parseImportTuple()
-		if p.tok.Type != lexer.Assign {
-			panic("missing equals")
-		}
-		equals := p.tok
-		p.next()
-		if p.tok.Type != lexer.String {
-			panic("missing string")
-		}
-		path := p.parseImportPath()
-		importDecl = ast.ImportDeclPackage{
-			Binding: tup,
-			Equals:  equals,
-			Path:    path,
-		}
-	default:
-		panic("invalid import declaration")
-	}
-	// unquote import path
-	// TODO: make this more robust
-	importPath, err := strconv.Unquote(importDecl.Path.Lit.Data)
-	if err != nil {
-		panic(fmt.Errorf("invalid import path: %v", err))
-	}
-	p.imports[importPath] = struct{}{}
+// func (p *parser) parseImportDeclPackage() ast.Node {
+// 	defer p.trace("parseImportDeclPackage")()
+// 	if p.tok.Type != lexer.ImportPath {
+// 		panic("missing import path")
+// 	}
+// 	return p.parseImportAliasExpr()
+// 	impPath := &ast.ImportPath{Lit: p.tok}
+// 	p.imports[impPath.Lit.Data] = struct{}{}
+// 	p.next()
+// 	switch p.tok.Type {
+// 	case lexer.As:
+// 		asTok := p.tok
+// 		p.next()
+// 		if p.tok.Type != lexer.Ident {
+// 			panic("missing identifier for import alias")
+// 		}
+// 		alias := &ast.Ident{Name: p.tok}
+// 		p.next()
+// 		return &ast.As{
+// 			X:     impPath,
+// 			As:    asTok,
+// 			Alias: alias,
+// 		}
+// 	case lexer.LeftParen:
+// 		dl := p.parseDefList()
+// 		return &ast.CallExpr{
+// 			Elements: []ast.Node{impPath, dl},
+// 		}
+// 	case lexer.Period:
+// 		p.parseDef
+// 		dot := p.tok
+// 		p.next()
+// 		if p.tok.Type != lexer.Ident {
+// 			panic("missing identifier")
+// 		}
+// 		id := &ast.Ident{Name: p.tok}
+// 		p.next()
+// 		sel := &ast.SelectorExpr{
+// 			X:      impPath,
+// 			Period: dot,
+// 			Name:   id,
+// 		}
+// 		switch p.tok.Type {
+// 		case lexer.As:
+// 		case lexer.LeftParen:
+// 		case lexer.Period:
+// 		}
 
-	return &importDecl
-}
+// 	default:
+// 		return impPath
+// 	}
+// 	var importDecl ast.ImportDeclPackage
+// 	switch p.tok.Type {
+// 	case lexer.String:
+// 		path := p.parseImportPath()
+// 		importDecl = ast.ImportDeclPackage{Path: path}
+// 	case lexer.Ident:
+// 		alias := p.tok
+// 		p.next()
+// 		if p.tok.Type != lexer.Assign {
+// 			panic("missing equals")
+// 		}
+// 		equals := p.tok
+// 		p.next()
+// 		if p.tok.Type != lexer.String {
+// 			panic("missing string")
+// 		}
+// 		path := p.parseImportPath()
+// 		importDecl = ast.ImportDeclPackage{
+// 			Binding: &ast.Ident{Name: alias},
+// 			Equals:  equals,
+// 			Path:    path,
+// 		}
+// 	case lexer.LeftParen:
+// 		// tuple of identifiers
+// 		// tup := p.parseIdentTuple()
+// 		tup := p.parseImportTuple()
+// 		if p.tok.Type != lexer.Assign {
+// 			panic("missing equals")
+// 		}
+// 		equals := p.tok
+// 		p.next()
+// 		if p.tok.Type != lexer.String {
+// 			panic("missing string")
+// 		}
+// 		path := p.parseImportPath()
+// 		importDecl = ast.ImportDeclPackage{
+// 			Binding: tup,
+// 			Equals:  equals,
+// 			Path:    path,
+// 		}
+// 	default:
+// 		panic("invalid import declaration")
+// 	}
+// 	// unquote import path
+// 	// TODO: make this more robust
+// 	importPath, err := strconv.Unquote(importDecl.Path.Lit.Data)
+// 	if err != nil {
+// 		panic(fmt.Errorf("invalid import path: %v", err))
+// 	}
+// 	p.imports[importPath] = struct{}{}
+
+// 	return &importDecl
+// }
 
 func (p *parser) parseImportDeclBlock() ast.Node {
 	// essentially a tuple of import declarations
@@ -1426,7 +1499,7 @@ func (p *parser) parseImportDeclBlock() ast.Node {
 	p.next()
 	for p.tok.Type != lexer.RightParen && p.tok.Type != lexer.EOF {
 		var elem ast.CommaElement
-		elem.X = p.parseImportDeclPackage()
+		elem.X = p.parseImportPackageAlias()
 		if p.tok.Type == lexer.Comma {
 			elem.Comma = p.tok
 			p.next()
@@ -1457,21 +1530,231 @@ func (p *parser) parseImportDecl() ast.Node {
 	defer p.trace("parseImportDecl")()
 	var importDecl ast.ImportDecl
 	importDecl.Import = p.tok
+	p.l.LexImportPathNext()
 	p.next()
 	if p.tok.Type == lexer.LeftParen {
-		switch p.peek().Type {
-		case lexer.Ident:
-			switch p.peek2().Type {
-			case lexer.Comma, lexer.RightParen, lexer.LeftBracket:
-				importDecl.Package = p.parseImportDeclPackage()
-				return &importDecl
-			}
-		}
-		importDecl.Package = p.parseImportDeclBlock()
+		// parse block
+
+		// switch p.peek().Type {
+		// case lexer.Ident:
+		// 	switch p.peek2().Type {
+		// 	case lexer.Comma, lexer.RightParen, lexer.LeftBracket:
+		// 		importDecl.Package = p.parseImportDeclPackage()
+		// 		return &importDecl
+		// 	}
+		// }
+		importDecl.Decl = p.parseImportDeclBlock()
 		return &importDecl
 	}
-	importDecl.Package = p.parseImportDeclPackage()
+	// p.tok
+	importDecl.Decl = p.parseImportPackageAlias()
+	// importDecl.Package = p.parseImportDeclPackage()
 	return &importDecl
+}
+
+func (p *parser) parseImportMemberTuple() ast.Node {
+	defer p.trace("parseImportMemberTuple")()
+	shouldInsert := p.shouldInsertAfter
+	toksToCheck := p.afterToksToCheck
+	p.shouldInsertDelimAfter(false)
+	var tuple ast.Tuple
+	tuple.LeftParen = p.tok
+	p.next()
+	for p.tok.Type != lexer.RightParen && p.tok.Type != lexer.EOF {
+		var elem ast.CommaElement
+		if p.tok.Type != lexer.Ident {
+			panic("expected identifier")
+		}
+		member := &ast.Ident{Name: p.tok}
+		p.next()
+		elem.X = p.parseImportAliasExpr(member)
+		if p.tok.Type == lexer.Comma {
+			elem.Comma = p.tok
+			p.next()
+		}
+		if p.tok.Type == lexer.LineTerminator {
+			p.next()
+		}
+		tuple.Elements = append(tuple.Elements, &elem)
+	}
+	if p.tok.Type != lexer.RightParen {
+		panic("missing right paren")
+	}
+	tuple.RightParen = p.tok
+	p.shouldInsertDelimAfter(shouldInsert, toksToCheck...)
+	p.next()
+	return &tuple
+}
+
+func (p *parser) parseImportType() ast.Node {
+	defer p.trace("parseImportType")()
+	if p.tok.Type != lexer.Ident {
+		panic("missing identifier")
+	}
+	def := &ast.Ident{Name: p.tok}
+	p.next()
+	switch p.tok.Type {
+	case lexer.LeftParen:
+		mt := p.parseImportMemberTuple()
+		return &ast.CallExpr{
+			Elements: []ast.Node{def, mt},
+		}
+	case lexer.Period:
+		sel := &ast.SelectorExpr{
+			X:      def,
+			Period: p.tok,
+		}
+		p.next()
+		if p.tok.Type != lexer.Ident {
+			panic("missing identifier")
+		}
+		sel.Name = &ast.Ident{Name: p.tok}
+		p.next()
+		return sel
+	default:
+		return def
+	}
+}
+
+func (p *parser) parseImportAliasExpr(x ast.Node) ast.Node {
+	defer p.trace("parseImportAliasExpr")()
+	if p.tok.Type == lexer.As {
+		if ce, ok := x.(*ast.CallExpr); ok {
+			if _, isTuple := ce.Elements[1].(*ast.Tuple); isTuple {
+				panic("cannot have import alias on tuple")
+			}
+		}
+		as := p.tok
+		p.next()
+		if p.tok.Type != lexer.Ident {
+			panic("missing identifier")
+		}
+		alias := &ast.Ident{Name: p.tok}
+		p.next()
+		return &ast.As{
+			X:     x,
+			As:    as,
+			Alias: alias,
+		}
+	}
+	return x
+}
+
+func (p *parser) parseImportTypeTuple() ast.Node {
+	defer p.trace("parseImportTypeTuple")()
+	shouldInsert := p.shouldInsertAfter
+	toksToCheck := p.afterToksToCheck
+	p.shouldInsertDelimAfter(false)
+	var tuple ast.Tuple
+	tuple.LeftParen = p.tok
+	p.next()
+	for p.tok.Type != lexer.RightParen && p.tok.Type != lexer.EOF {
+		var elem ast.CommaElement
+		elem.X = p.parseImportAliasExpr(p.parseImportType())
+		if p.tok.Type == lexer.Comma {
+			elem.Comma = p.tok
+			p.next()
+		}
+		if p.tok.Type == lexer.LineTerminator {
+			p.next()
+		}
+		tuple.Elements = append(tuple.Elements, &elem)
+	}
+	if p.tok.Type != lexer.RightParen {
+		panic("missing right paren")
+	}
+	tuple.RightParen = p.tok
+	p.shouldInsertDelimAfter(shouldInsert, toksToCheck...)
+	p.next()
+	return &tuple
+}
+
+func (p *parser) parseImportPackageElem() ast.Node {
+	// topLevel means we require an import path to be the leftmost element
+	defer p.trace("parseImportPackageElem")()
+	if p.tok.Type != lexer.ImportPath {
+		panic("missing import path")
+	}
+	prefix, _, ok := module.SplitPathVersion(p.tok.Data)
+	if !ok {
+		panic("invalid import path")
+	}
+	impPath := &ast.ImportPath{
+		Lit:         p.tok,
+		PackageName: path.Base(prefix),
+	}
+	p.imports[impPath.Lit.Data] = struct{}{}
+	p.next()
+	switch p.tok.Type {
+	case lexer.Period:
+		tok := p.tok
+		p.next()
+		if p.tok.Type != lexer.Ident {
+			panic("missing identifier")
+		}
+		sel := &ast.SelectorExpr{
+			X:      impPath,
+			Period: tok,
+			Name:   &ast.Ident{Name: p.tok},
+		}
+		p.next()
+		switch p.tok.Type {
+		case lexer.Period:
+			tok := p.tok
+			p.next()
+			if p.tok.Type != lexer.Ident {
+				panic("missing identifier")
+			}
+			sel = &ast.SelectorExpr{
+				X:      sel,
+				Period: tok,
+				Name:   &ast.Ident{Name: p.tok},
+			}
+			p.next()
+			return sel
+		case lexer.LeftParen:
+			// tuple of identifers with optional "as"
+			mtup := p.parseImportMemberTuple()
+			return &ast.CallExpr{
+				Elements: []ast.Node{sel, mtup},
+			}
+		default:
+			return sel
+		}
+	case lexer.LeftParen:
+		ttup := p.parseImportTypeTuple()
+		return &ast.CallExpr{
+			Elements: []ast.Node{impPath, ttup},
+		}
+	default:
+		return impPath
+	}
+}
+
+func (p *parser) parseImportPackageAlias() ast.Node {
+	defer p.trace("parseImportPackageAlias")()
+	// pratt parse
+	elem := p.parseImportPackageElem()
+	if p.tok.Type == lexer.As {
+		if ce, ok := elem.(*ast.CallExpr); ok {
+			if _, isTuple := ce.Elements[1].(*ast.Tuple); isTuple {
+				panic("cannot have import alias on tuple")
+			}
+		}
+		as := p.tok
+		p.next()
+		if p.tok.Type != lexer.Ident {
+			panic("missing identifier")
+		}
+		alias := &ast.Ident{Name: p.tok}
+		p.next()
+		return &ast.As{
+			X:     elem,
+			As:    as,
+			Alias: alias,
+		}
+	}
+	return elem
 }
 
 func (p *parser) parseImplDecl() ast.Node {
@@ -1511,24 +1794,80 @@ func (p *parser) parseExprOrStmt() ast.Node {
 	}
 }
 
+func (p *parser) markExports(x ast.Node, bind ast.Bind) {
+	switch x := x.(type) {
+	case *ast.Ident:
+		p.env.Add(x.Name.Data, bind)
+		// if token.IsExported(x.Name.Data) {
+		// 	if _, ok := p.decls[x.Name.Data]; ok {
+		// 		panic(fmt.Sprintf("duplicate export: %v", x.Name.Data))
+		// 	}
+		// 	p.decls[x.Name.Data] = x
+		// }
+	case *ast.Tuple:
+		for _, elem := range x.Elements {
+			p.markExports(elem, bind)
+		}
+	case *ast.CommaElement:
+		p.markExports(x.X, bind)
+	case *ast.TypeAnnotation:
+		p.markExports(x.Destructure, bind)
+	case *ast.As:
+		if _, ok := x.X.(*ast.ImportPath); ok {
+			// package alias
+			p.env.Add(x.Alias.Name.Data, bind)
+		} else {
+			// inner alias
+			p.env.Add(x.Alias.Name.Data, ast.UnresolvedImportedBind{})
+		}
+	case *ast.CallExpr:
+		if _, ok := x.Elements[0].(*ast.ImportPath); !ok {
+			p.markExports(x.Elements[0], ast.UnresolvedImportedBind{})
+		}
+		p.markExports(x.Elements[1], ast.UnresolvedImportedBind{})
+	case *ast.SelectorExpr:
+		p.env.Add(x.Name.Name.Data, ast.UnresolvedImportedBind{})
+	case *ast.ImportPath:
+		p.env.Add(x.PackageName, bind)
+	}
+}
+
+func (p *parser) markTopLevel(x ast.Node) ast.Node {
+	switch x := x.(type) {
+	case *ast.LetDecl:
+		p.markExports(x.Destructure, ast.VarBind{})
+	case *ast.LetFunction:
+		p.markExports(x.Name, ast.VarBind{})
+	case *ast.Function:
+		p.markExports(x.Name, ast.VarBind{})
+	case *ast.TypeDecl:
+		p.markExports(x.Name, ast.TypeBind{})
+	case *ast.ImportDecl:
+		p.markExports(x.Decl, ast.PackageBind{})
+	}
+	return x
+}
+
 func (p *parser) parseTopLevelDeclaration() ast.Node {
 	defer p.trace("parseTopLevelDeclaration")()
 	switch p.tok.Type {
 	case lexer.Import:
 		// TODO: imports should only be at the top?
-		return p.parseImportDecl()
+		// also add these to decls
+		return p.markTopLevel(p.parseImportDecl())
 	case lexer.Let:
-		return p.parseLetDecl()
+		return p.markTopLevel(p.parseLetDecl())
 	case lexer.Type:
-		return p.parseTypeDecl()
+		return p.markTopLevel(p.parseTypeDecl())
 	case lexer.Impl:
 		return p.parseImplDecl()
 	case lexer.Semicolon, lexer.LineTerminator:
 		return &ast.EmptyExpr{}
 	case lexer.Fun:
-		return p.parseFun(true)
+		return p.markTopLevel(p.parseFun(true))
 	}
-	panic("invalid top level declaration")
+	// TODO: add these declarations to the module exports
+	panic(fmt.Sprintf("invalid top level declaration: %v", p.tok))
 }
 
 func (p *parser) parseBody(topLevel bool, until lexer.TokenType) *ast.Block {

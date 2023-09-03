@@ -14,15 +14,15 @@ func TestImport(t *testing.T) {
 			Data: []byte(`
 			package a1
 
-			import "a/a3"
-			import "a/a2"
+			import a/a3
+			import a/a2
 			`),
 		},
 		"a/a2/b.gf": &fstest.MapFile{
 			Data: []byte(`
 			package a2
 
-			import "a/a3"
+			import a/a3
 			`),
 		},
 		"a/a3/c.gf": &fstest.MapFile{

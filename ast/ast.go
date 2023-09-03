@@ -53,7 +53,8 @@ var (
 	_ Node = (*InterpolatedString)(nil)
 	_ Node = (*IndexExpr)(nil)
 	_ Node = (*ImportDecl)(nil)
-	_ Node = (*ImportDeclPackage)(nil)
+	_ Node = (*As)(nil)
+	// _ Node = (*ImportDeclPackage)(nil)
 	_ Node = (*ImplDecl)(nil)
 	_ Node = (*ArrayType)(nil)
 	_ Node = (*NillableType)(nil)
@@ -115,14 +116,57 @@ type File struct {
 	Body           *Block
 	trailingTrivia []lexer.Token
 	Imports        map[string]struct{}
+	Env            *Env
 }
 
 func (f *File) SetTrailingTrivia(tt []lexer.Token) {
 	f.trailingTrivia = tt
 }
 
+func (f *File) ASTString(depth int) string {
+	if f.Package.Type == lexer.Package {
+		return fmt.Sprintf(
+			"File\n%sFilename: %s\n%sPackage: %s\n%sPackageName: %s\n%sBody: %s\n%sTrailingTrivia: %v\n%sImports: %v\n%sEnv:\n%v",
+			indent(depth+1), f.Filename,
+			indent(depth+1),
+			f.Package, indent(depth+1),
+			f.PackageName.ASTString(depth+1), indent(depth+1),
+			f.Body.ASTString(depth+1), indent(depth+1),
+			f.trailingTrivia, indent(depth+1),
+			f.Imports, indent(depth+1), indentLines(depth+2, f.Env.String()))
+	}
+	return fmt.Sprintf(
+		"File\n%sFilename: %s\n%sBody: %s\n%sTrailingTrivia: %v\n%sImports: %v",
+		indent(depth+1), f.Filename,
+		indent(depth+1),
+		f.Body.ASTString(depth+1), indent(depth+1),
+		f.trailingTrivia, indent(depth+1),
+		f.Imports)
+}
+
+func (f *File) LeadingTrivia() []lexer.Token {
+	if f.Package.Type == lexer.Package {
+		return f.Package.LeadingTrivia
+	}
+	return leadingTriviaOf(f.Body)
+}
+
+func (f *File) Span() lexer.Span {
+	return spanOf(f.Package).Add(spanOf(f.Body))
+}
+
+func (f *File) TrailingTrivia() []lexer.Token {
+	return f.trailingTrivia
+}
+
 func indent(depth int) string {
 	return fmt.Sprintf("%*s", depth*2, "")
+}
+
+func indentLines(depth int, input string) string {
+	s := indent(depth) + strings.ReplaceAll(input, "\n", "\n"+indent(depth))
+	// fmt.Println(s)
+	return s
 }
 
 type Stmt struct {
@@ -150,56 +194,21 @@ func (s *Stmt) Span() lexer.Span {
 	return spanOf(s.Stmt).Add(s.Terminator.Span)
 }
 
-func (f *File) ASTString(depth int) string {
-	if f.Package.Type == lexer.Package {
-		return fmt.Sprintf(
-			"File\n%sFilename: %s\n%sPackage: %s\n%sPackageName: %s\n%sBody: %s\n%sTrailingTrivia: %v\n%sImports: %v",
-			indent(depth+1), f.Filename,
-			indent(depth+1),
-			f.Package, indent(depth+1),
-			f.PackageName.ASTString(depth+1), indent(depth+1),
-			f.Body.ASTString(depth+1), indent(depth+1),
-			f.trailingTrivia, indent(depth+1),
-			f.Imports)
-	}
-	return fmt.Sprintf(
-		"File\n%sFilename: %s\n%sBody: %s\n%sTrailingTrivia: %v\n%sImports: %v",
-		indent(depth+1), f.Filename,
-		indent(depth+1),
-		f.Body.ASTString(depth+1), indent(depth+1),
-		f.trailingTrivia, indent(depth+1),
-		f.Imports)
-}
-
-func (f *File) LeadingTrivia() []lexer.Token {
-	if f.Package.Type == lexer.Package {
-		return f.Package.LeadingTrivia
-	}
-	return leadingTriviaOf(f.Body)
-}
-
-func (f *File) Span() lexer.Span {
-	return spanOf(f.Package).Add(spanOf(f.Body))
-}
-
-func (f *File) TrailingTrivia() []lexer.Token {
-	return f.trailingTrivia
-}
-
 type Package struct {
 	Name         string
 	PackageFiles []*File
 	ScriptFile   *File
 	Imports      map[string]struct{}
+	Env          *Env
 }
 
 func (p *Package) ASTString(depth int) string {
 	if p.ScriptFile == nil {
-		return fmt.Sprintf("Package\n%sName: %s\n%sPackageFiles: %s\n%sImports: %v",
+		return fmt.Sprintf("Package\n%sName: %s\n%sPackageFiles: %s\n%sImports: %v\n%sEnv:\n%v",
 			indent(depth+1),
 			p.Name, indent(depth+1),
 			printFileSlice(depth+1, p.PackageFiles), indent(depth+1),
-			p.Imports)
+			p.Imports, indent(depth+1), indentLines(depth+2, p.Env.String()))
 	}
 	return fmt.Sprintf(
 		"Package\n%sName: %s\n%sPackageFiles: %s\n%sScriptFile: %s\n%sImports: %v",
@@ -1083,8 +1092,8 @@ func (i *IndexExpr) ASTString(depth int) string {
 }
 
 type ImportDecl struct {
-	Import  lexer.Token
-	Package Node
+	Import lexer.Token
+	Decl   Node
 }
 
 func (i *ImportDecl) LeadingTrivia() []lexer.Token {
@@ -1092,39 +1101,94 @@ func (i *ImportDecl) LeadingTrivia() []lexer.Token {
 }
 
 func (i *ImportDecl) Span() lexer.Span {
-	return i.Import.Span.Add(spanOf(i.Package))
+	return i.Import.Span.Add(spanOf(i.Decl))
 }
 
 func (i *ImportDecl) ASTString(depth int) string {
-	return fmt.Sprintf("ImportDecl\n%sImport: %s\n%sPackage: %s", indent(depth+1), i.Import, indent(depth+1), i.Package.ASTString(depth+1))
+	return fmt.Sprintf("ImportDecl\n%sImport: %s\n%sDecl: %s", indent(depth+1), i.Import, indent(depth+1), i.Decl.ASTString(depth+1))
 }
 
-type ImportDeclPackage struct {
-	Binding Node
-	Equals  lexer.Token
-	Path    *BasicString
+type ImportPath struct {
+	Lit         lexer.Token
+	PackageName string
 }
 
-func (i *ImportDeclPackage) LeadingTrivia() []lexer.Token {
-	if i.Binding != nil {
-		return leadingTriviaOf(i.Binding)
-	}
-	return leadingTriviaOf(i.Path)
+func (i *ImportPath) LeadingTrivia() []lexer.Token {
+	return i.Lit.LeadingTrivia
 }
 
-func (i *ImportDeclPackage) Span() lexer.Span {
-	if i.Binding != nil {
-		return spanOf(i.Binding).Add(i.Equals.Span).Add(spanOf(i.Path))
-	}
-	return spanOf(i.Path)
+func (i *ImportPath) Span() lexer.Span {
+	return i.Lit.Span
 }
 
-func (i *ImportDeclPackage) ASTString(depth int) string {
-	if i.Binding != nil {
-		return fmt.Sprintf("ImportDeclPackage\n%sBinding: %s\n%sEquals: %s\n%sPath: %s", indent(depth+1), i.Binding.ASTString(depth+1), indent(depth+1), i.Equals, indent(depth+1), i.Path.ASTString(depth+1))
-	}
-	return fmt.Sprintf("ImportDeclPackage\n%sPath: %s", indent(depth+1), i.Path.ASTString(depth+1))
+func (i *ImportPath) ASTString(depth int) string {
+	return i.Lit.String()
 }
+
+type As struct {
+	X     Node
+	As    lexer.Token
+	Alias *Ident
+}
+
+func (a *As) LeadingTrivia() []lexer.Token {
+	return leadingTriviaOf(a.X)
+}
+
+func (a *As) Span() lexer.Span {
+	return spanOf(a.X).Add(spanOf(a.Alias))
+}
+
+func (a *As) ASTString(depth int) string {
+	return fmt.Sprintf("As\n%sX: %s\n%sAs: %s\n%sAlias: %s", indent(depth+1), a.X.ASTString(depth+1), indent(depth+1), a.As, indent(depth+1), a.Alias.ASTString(depth+1))
+}
+
+// type ImportAlias struct {
+// 	Path  *ImportPath
+// 	As    lexer.Token
+// 	Alias *Ident
+// }
+
+// type ImportDot struct {
+// 	Path *ImportPath
+// 	Dot  lexer.Token
+// 	Def  Node
+// }
+
+// type ImportParen struct {
+// 	Path    *ImportPath
+// 	DefList Node
+// }
+
+// type ImportDeclPackage struct {
+// 	Path *ImportPath
+
+// 	// as, . ()
+// 	// Binding Node
+// 	// Equals  lexer.Token
+// 	// Path    *BasicString
+// }
+
+// func (i *ImportDeclPackage) LeadingTrivia() []lexer.Token {
+// 	if i.Binding != nil {
+// 		return leadingTriviaOf(i.Binding)
+// 	}
+// 	return leadingTriviaOf(i.Path)
+// }
+
+// func (i *ImportDeclPackage) Span() lexer.Span {
+// 	if i.Binding != nil {
+// 		return spanOf(i.Binding).Add(i.Equals.Span).Add(spanOf(i.Path))
+// 	}
+// 	return spanOf(i.Path)
+// }
+
+// func (i *ImportDeclPackage) ASTString(depth int) string {
+// 	if i.Binding != nil {
+// 		return fmt.Sprintf("ImportDeclPackage\n%sBinding: %s\n%sEquals: %s\n%sPath: %s", indent(depth+1), i.Binding.ASTString(depth+1), indent(depth+1), i.Equals, indent(depth+1), i.Path.ASTString(depth+1))
+// 	}
+// 	return fmt.Sprintf("ImportDeclPackage\n%sPath: %s", indent(depth+1), i.Path.ASTString(depth+1))
+// }
 
 type ImplDecl struct {
 	Impl   lexer.Token

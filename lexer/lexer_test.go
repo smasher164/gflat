@@ -86,7 +86,12 @@ func TestLexer(t *testing.T) {
 		})
 	}
 	// if debug {
-	// 	run("test", `\"a"\t""`, []Token{{Type: EOF}})
+	// 	run("test.gf", `import a/b(foo,bar)`, []Token{{Type: EOF}})
+	// 	return
+	// }
+
+	// if debug {
+	// 	run("test.gf", `\"a"\t""`, []Token{{Type: EOF}})
 	// 	return
 	// }
 
