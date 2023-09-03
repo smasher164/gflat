@@ -18,6 +18,8 @@ func TestPackage(t *testing.T) {
 		{"b.gf", `
 		package a
 
+		import b
+
 		fun G(x) => x
 		`},
 		{"c.gf", `
