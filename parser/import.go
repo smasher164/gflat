@@ -27,12 +27,15 @@ func (i *Importer) importCrawl(path, scriptFile string) (err error) {
 	if err != nil {
 		return err
 	}
-	for path := range pkg.(*ast.Package).Imports {
+	pkg.(*ast.Package).Imports.Each(func(path string) {
 		if _, ok := i.PkgCache[path]; !ok {
 			if err = i.importCrawl(path, ""); err != nil {
-				return err
+				return
 			}
 		}
+	})
+	if err != nil {
+		return err
 	}
 	i.Sorted = append(i.Sorted, path)
 	return nil
@@ -43,15 +46,17 @@ func (i *Importer) checkCycle() error {
 	for idx, path := range i.Sorted {
 		pos[path] = idx
 	}
+	var err error
 	for path, pkg := range i.PkgCache {
-		for dep := range pkg.Imports {
+		pkg.Imports.Each(func(dep string) {
 			if pos[path] <= pos[dep] {
 				// TODO: print the full path in the cycle
-				return fmt.Errorf("import cycle detected: %s -> %s", path, dep)
+				err = fmt.Errorf("import cycle detected: %s -> %s", path, dep)
+				return
 			}
-		}
+		})
 	}
-	return nil
+	return err
 }
 
 // ImportCrawl imports a package and all its dependencies.
@@ -94,7 +99,7 @@ func (i *Importer) ImportSingle(path, scriptFile string) (pkg ast.Node, err erro
 	if !scriptFileFound && scriptFile != "" {
 		return pkg, fmt.Errorf("script file %s not found in package %s", scriptFile, path)
 	}
-	pkg, err = ParsePackage(pkgfs, scriptFile, filenames...)
+	pkg, err = ParsePackage(path, pkgfs, scriptFile, filenames...)
 	if err != nil {
 		return pkg, err
 	}

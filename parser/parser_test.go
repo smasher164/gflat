@@ -1,11 +1,14 @@
 package parser_test
 
 import (
+	"path"
 	"testing"
 
 	"github.com/smasher164/gflat/ast"
 	"github.com/smasher164/gflat/fsx"
+	"github.com/smasher164/gflat/lexer"
 	"github.com/smasher164/gflat/parser"
+	"github.com/zyedidia/generic/mapset"
 )
 
 func TestPackage(t *testing.T) {
@@ -26,7 +29,7 @@ func TestPackage(t *testing.T) {
 		print "Hello, World!"
 		`},
 	})
-	pkg, err := parser.ParsePackage(fsys, "c.gf", "a.gf", "b.gf")
+	pkg, err := parser.ParsePackage("", fsys, "c.gf", "a.gf", "b.gf")
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -38,7 +41,8 @@ func TestFile(t *testing.T) {
 	// open file ?> ctx $"could not open {file}" |> readFile
 	// `}})
 	fsys := fsx.TestFS([][2]string{{"test.gf", `
-	import path/to/package (Foo(Bar, Bar))
+	let f x = x
+	print 3
 	`}})
 	// fsys := fsx.TestFS([][2]string{{"test.gf", `
 	// type A =
@@ -175,7 +179,13 @@ func TestFile(t *testing.T) {
 	// 	},
 	// }
 	// l, err := lexer.NewLexer(, "test.txt")
-	f, err := parser.ParseFile(fsys, ast.NewEnv(nil), "test.gf")
+	filename := "test.gf"
+	l, err := lexer.NewLexer(fsys, filename)
+	if err != nil {
+		t.Fatal(err)
+	}
+	qualifier := path.Join("", filename)
+	f, err := parser.ParseFile(l, ast.NewEnv(nil), mapset.New[string](), qualifier)
 	if err != nil {
 		t.Fatal(err)
 	}

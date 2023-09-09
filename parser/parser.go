@@ -7,7 +7,7 @@ import (
 
 	"github.com/smasher164/gflat/ast"
 	"github.com/smasher164/gflat/lexer"
-	"golang.org/x/exp/maps"
+	"github.com/zyedidia/generic/mapset"
 	"golang.org/x/mod/module"
 )
 
@@ -22,8 +22,10 @@ type parser struct {
 	tok                lexer.Token
 	buf                []lexer.Token // rework this when you need to start backtracking.
 	indent             int
-	imports            map[string]struct{}
+	imports            mapset.Set[string]
 	env                *ast.Env
+	unique             mapset.Set[string]
+	qualifier          string
 }
 
 type Lexer interface {
@@ -56,27 +58,45 @@ func (p *parser) trace(msg string) func() {
 	return func() {}
 }
 
-func ParseFile(fsys fs.FS, fileEnv *ast.Env, filename string) (ast.Node, error) {
-	l, err := lexer.NewLexer(fsys, filename)
-	if err != nil {
-		return nil, err
-	}
+// TODO: We should probably not expose mapset.Set to users.
+func ParseFile(l Lexer, fileEnv *ast.Env, unique mapset.Set[string], qualifier string) (ast.Node, error) {
+	// l, err := lexer.NewLexer(fsys, filename)
+	// if err != nil {
+	// 	return nil, err
+	// }
 	p := &parser{
-		l:       l,
-		imports: make(map[string]struct{}),
-		env:     fileEnv,
+		l:         l,
+		imports:   mapset.New[string](),
+		env:       fileEnv,
+		unique:    unique,
+		qualifier: qualifier,
+		// qualifier: path.Join(pathToPkg, filename),
 	}
 	f := p.parseFile()
 	return f, nil
 }
 
-func ParsePackage(fsys fs.FS, scriptFile string, filenames ...string) (ast.Node, error) {
+func ParsePackage(pathToPkg string, fsys fs.FS, scriptFile string, filenames ...string) (ast.Node, error) {
 	var pkg ast.Package
-	pkg.Imports = make(map[string]struct{})
+	pkg.Path = pathToPkg
+	pkg.Imports = mapset.New[string]()
 	pkg.Env = ast.Universe.AddScope()
+	pkg.Unique = mapset.New[string]()
+	// init Unique with all builtin names
+	for name := range ast.Universe.Symbols {
+		pkg.Unique.Put(name)
+	}
 	var first error
+	// if scriptFile != "" {
+	// 	filenames = append(filenames, scriptFile)
+	// }
 	for _, filename := range filenames {
-		file, err := ParseFile(fsys, pkg.Env.AddScope(), filename)
+		l, err := lexer.NewLexer(fsys, filename)
+		if err != nil {
+			return nil, err
+		}
+		qualifier := path.Join(pathToPkg, filename)
+		file, err := ParseFile(l, pkg.Env.AddScope(), pkg.Unique, qualifier)
 		if err != nil {
 			if first == nil {
 				first = err
@@ -99,18 +119,19 @@ func ParsePackage(fsys fs.FS, scriptFile string, filenames ...string) (ast.Node,
 							return nil, fmt.Errorf("package name mismatch: %s != %s", pkg.Name, name)
 						}
 					}
-				}
-				maps.Copy(pkg.Imports, file.Imports)
-				// TODO: copy over all non imported decls
-				for name, bind := range file.Env.Symbols {
-					// if name exists in pkg.Env, then it's a duplicate
-					// if bind is a package or unresolvedextern, then don't copy it over
-					// otherwise copy over and delete from file
-					switch bind.(type) {
-					case ast.PackageBind, ast.UnresolvedImportedBind:
-					default:
-						pkg.Env.Add(name, bind)
-						delete(file.Env.Symbols, name)
+
+					file.Imports.Each(func(path string) { pkg.Imports.Put(path) })
+					// TODO: copy over all non imported decls
+					for name, bind := range file.Body.Env.Symbols {
+						// if name exists in pkg.Env, then it's a duplicate
+						// if bind is a package or unresolvedextern, then don't copy it over
+						// otherwise copy over and delete from file
+						switch bind.(type) {
+						case ast.PackageBind, ast.UnresolvedImportedBind:
+						default:
+							pkg.Env.Add(name, bind)
+							delete(file.Body.Env.Symbols, name)
+						}
 					}
 				}
 			}
@@ -148,21 +169,33 @@ func (p *parser) peek2() lexer.Token {
 	return p.buf[1]
 }
 
+func (p *parser) expectIdent() *ast.Ident {
+	if p.tok.Type != lexer.Ident {
+		panic("expected identifier")
+	}
+	id := &ast.Ident{
+		Qualifier: p.qualifier,
+		Name:      p.tok,
+	}
+	p.unique.Put(id.Name.Data)
+	p.next()
+	return id
+}
+
 func (p *parser) parseFile() *ast.File {
 	defer p.trace("parseFile")()
 	p.next()
-	f := &ast.File{
-		Env: p.env,
-	}
+	f := &ast.File{}
 	if p.tok.Type == lexer.Package {
 		f.Package = p.tok
 		p.next()
-		if p.tok.Type == lexer.Ident {
-			f.PackageName = &ast.Ident{Name: p.tok}
-		} else {
+		if p.tok.Type != lexer.Ident {
 			panic("expected identifier after package")
-			// do I need to give it a span?
-			// f.PackageName = Illegal{Msg: "expected identifier after package"}
+		}
+		// no need to add it to unique because you can't reference your own package name
+		f.PackageName = &ast.Ident{
+			Qualifier: p.qualifier,
+			Name:      p.tok,
 		}
 		p.next()
 	}
@@ -170,6 +203,7 @@ func (p *parser) parseFile() *ast.File {
 		p.next()
 	}
 	f.Body = p.parseBody(f.Package.Type == lexer.Package, lexer.EOF)
+	f.Body.Env = p.env
 	if p.tok.Type == lexer.EOF {
 		f.SetTrailingTrivia(p.tok.LeadingTrivia)
 	}
@@ -193,10 +227,19 @@ func (p *parser) parseLetDecl() ast.Node {
 	defer p.trace("parseLetDecl")()
 	letTok := p.tok
 	p.next()
-	letFun := new(ast.LetFunction)
+	letFun := &ast.LetFunction{
+		Env: p.env.AddScope(),
+	}
 	if p.tok.Type == lexer.TypeArg {
 		for p.tok.Type == lexer.TypeArg {
-			letFun.TypeParams = append(letFun.TypeParams, p.parseNamedTypeArgument())
+			typeParam := p.parseNamedTypeArgument()
+			letFun.TypeParams = append(letFun.TypeParams, typeParam)
+			tvar := typeParam.TypeArg.Data
+			if _, _, ok := letFun.Env.LookupStack(tvar); ok {
+				panic(fmt.Sprintf("duplicate type parameter %q", tvar))
+			}
+			// letFun.Env.Add(tvar, ast.TypeBind{Type: ast.NewTypeVar(tvar)})
+			letFun.Env.Add(tvar, ast.TypeBind{})
 		}
 		if p.tok.Type != lexer.Ident {
 			panic("expected identifier after type arguments")
@@ -210,8 +253,12 @@ func (p *parser) parseLetDecl() ast.Node {
 	if p.tok.Type == lexer.Ident {
 		switch p.peek().Type {
 		case lexer.Ident, lexer.LeftParen:
-			letFun.Name = &ast.Ident{Name: p.tok}
-			p.next()
+			p.env = letFun.Env
+			defer p.popScope()
+			letFun.Name = p.expectIdent()
+			// already added to outer scope
+			// disallow this name to be used in parameters
+			// p.env.Add(letFun.Name.Name.Data, ast.VarBind{})
 			letFun.Signature = p.parseFunctionSignature()
 			if p.tok.Type == lexer.LineTerminator && p.peek().Type == lexer.LeftBrace {
 				p.next()
@@ -225,7 +272,12 @@ func (p *parser) parseLetDecl() ast.Node {
 				return letFun // accept forward declaration
 				// panic("expected = or { after function signature") // handle forward declaration
 			}
-			letFun.Body = p.parseExpr()
+			if p.tok.Type == lexer.LeftBrace {
+				// we just want the block, not anything after that.
+				letFun.Body = p.parseOperand()
+			} else {
+				letFun.Body = p.parseExpr()
+			}
 			return letFun
 		}
 	}
@@ -295,17 +347,20 @@ func (p *parser) parseFunctionSignature() *ast.FunctionSignature {
 	var fun ast.FunctionSignature
 	if p.tok.Type == lexer.Ident {
 		var param ast.TypeAnnotation
-		param.Destructure = &ast.Ident{Name: p.tok}
-		p.next()
+		paramName := p.expectIdent()
+		p.env.Add(paramName.Name.Data, ast.VarBind{})
+		param.Destructure = paramName
 		if p.tok.Type == lexer.Colon {
 			param.Colon = p.tok
 			p.next()
+			// TODO: traverse type body and add all type variables to env if they don't exist
 			param.Type = p.parseTypeBody(false, false)
 		}
 		fun.Param = &param
 	} else if p.tok.Type == lexer.LeftParen {
 		// TODO: is this too general for function declarations?
 		// It permits fun foo (bool)
+		// TODO: traverse to add bindings and type variables.
 		fun.Param = p.parseTupleType()
 	} else {
 		panic("expected ident or tuple type for function signature")
@@ -314,6 +369,7 @@ func (p *parser) parseFunctionSignature() *ast.FunctionSignature {
 		var arrow ast.Arrow
 		arrow.Arrow = p.tok
 		p.next()
+		// TODO: traverse to add bindings and type variables.
 		arrow.Type = p.parseTypeBody(false, false)
 		fun.Arrows = append(fun.Arrows, &arrow)
 	}
@@ -325,18 +381,42 @@ func (p *parser) parseFunctionSignature() *ast.FunctionSignature {
 	return &fun
 }
 
+func (p *parser) pushScope() {
+	p.env = p.env.AddScope()
+}
+
+func (p *parser) popScope() {
+	p.env = p.env.Parent
+}
+
 func (p *parser) parseFun(topLevel bool) ast.Node {
 	defer p.trace("parseFun")()
-	fun := ast.Function{Fun: p.tok}
+	p.pushScope()
+	defer p.popScope()
+	fun := ast.Function{
+		Fun: p.tok,
+		Env: p.env,
+	}
 	p.next()
 	for p.tok.Type == lexer.TypeArg {
-		fun.TypeParams = append(fun.TypeParams, p.parseNamedTypeArgument())
+		typeParam := p.parseNamedTypeArgument()
+		fun.TypeParams = append(fun.TypeParams, typeParam)
+		// can they shadow?
+		// if not, we can do a lookup-stack for tvar in the env, and panic if it exists
+		tvar := typeParam.TypeArg.Data
+		if _, _, ok := p.env.LookupStack(tvar); ok {
+			panic(fmt.Sprintf("duplicate type parameter %q", tvar))
+		}
+		// p.env.Add(tvar, ast.TypeBind{Type: ast.NewTypeVar(tvar)})
+		p.env.Add(tvar, ast.TypeBind{})
 	}
 	if p.tok.Type == lexer.Ident {
 		switch p.peek().Type {
 		case lexer.Ident, lexer.LeftParen:
-			fun.Name = &ast.Ident{Name: p.tok}
-			p.next()
+			fun.Name = p.expectIdent()
+			// already added to outer scope
+			// disallow this name to be used in parameters
+			// p.env.Add(fun.Name.Name.Data, ast.VarBind{})
 		}
 	}
 	if topLevel && fun.Name == nil {
@@ -356,7 +436,12 @@ func (p *parser) parseFun(topLevel bool) ast.Node {
 		return &fun
 		// panic("expected => or { after function signature")
 	}
-	fun.Body = p.parseExpr()
+	if p.tok.Type == lexer.LeftBrace {
+		// we just want the block, not anything after that.
+		fun.Body = p.parseOperand()
+	} else {
+		fun.Body = p.parseExpr()
+	}
 	return &fun
 }
 
@@ -370,6 +455,8 @@ func (p *parser) parseOperand() ast.Node {
 	case lexer.LeftParen:
 		return p.parseTuple()
 	case lexer.LeftBrace:
+		p.pushScope()
+		defer p.popScope()
 		p.next()
 		block := p.parseBody(false, lexer.RightBrace)
 		if p.tok.Type != lexer.RightBrace {
@@ -378,10 +465,10 @@ func (p *parser) parseOperand() ast.Node {
 		block.LeftBrace = tok
 		block.RightBrace = p.tok
 		p.next()
+		block.Env = p.env
 		return block
 	case lexer.Ident:
-		p.next()
-		return &ast.Ident{Name: tok}
+		return p.expectIdent()
 	case lexer.Number:
 		p.next()
 		return &ast.Number{Lit: tok}
@@ -468,12 +555,8 @@ L:
 			}
 		case op.Type == lexer.Period:
 			p.next()
-			if p.tok.Type != lexer.Ident {
-				panic("expected ident after .")
-			}
-			id := p.tok
-			p.next()
-			x = &ast.SelectorExpr{X: x, Period: op, Name: &ast.Ident{Name: id}}
+			id := p.expectIdent()
+			x = &ast.SelectorExpr{X: x, Period: op, Name: id}
 		case op.Type == lexer.LeftBracket && len(p.tok.LeadingTrivia) == 0:
 			// greedily consume index expression. if leading trivia is present, it's an array literal
 			x = p.parseIndexExpr(x)
@@ -579,8 +662,7 @@ func (p *parser) parseDestructure() ast.Node {
 	var des ast.Node
 	switch p.tok.Type {
 	case lexer.Ident:
-		des = &ast.Ident{Name: p.tok}
-		p.next()
+		des = p.expectIdent()
 	case lexer.LeftParen:
 		des = p.parseTupleDestructure()
 	default:
@@ -742,20 +824,15 @@ func (p *parser) parseGuard() *ast.IfHeader {
 
 func (p *parser) parseTag() ast.Node {
 	defer p.trace("parseTag")()
-	var tag ast.Node = &ast.Ident{Name: p.tok}
-	p.next()
+	var tag ast.Node = p.expectIdent()
 	for p.tok.Type == lexer.Period {
 		period := p.tok
 		p.next()
-		if p.tok.Type != lexer.Ident {
-			panic("missing identifier")
-		}
-		ident := ast.Ident{Name: p.tok}
-		p.next()
+		ident := p.expectIdent()
 		tag = &ast.SelectorExpr{
 			X:      tag,
 			Period: period,
-			Name:   &ident,
+			Name:   ident,
 		}
 	}
 	return tag
@@ -775,8 +852,7 @@ func (p *parser) parsePattern() ast.Node {
 	}
 	switch p.tok.Type {
 	case lexer.Ident:
-		pat = &ast.Ident{Name: p.tok}
-		p.next()
+		pat = p.expectIdent()
 	case lexer.Number:
 		pat = &ast.Number{Lit: p.tok}
 		p.next()
@@ -827,10 +903,9 @@ func (p *parser) parseTuplePattern() ast.Node {
 	for p.tok.Type != lexer.RightParen && p.tok.Type != lexer.EOF {
 		var elem ast.CommaElement
 		if p.tok.Type == lexer.Ident && p.peek().Type == lexer.Assign {
-			id := p.tok
-			p.next()
+			id := p.expectIdent()
 			elem.X = &ast.BinaryExpr{
-				Left:  &ast.Ident{Name: id},
+				Left:  id,
 				Op:    p.tok,
 				Right: p.parseExpr(),
 			}
@@ -921,8 +996,7 @@ func (p *parser) parseImportTuple() ast.Node {
 		if p.tok.Type != lexer.Ident {
 			panic("expected identifier")
 		}
-		elem.X = &ast.Ident{Name: p.tok}
-		p.next()
+		elem.X = p.expectIdent()
 		for p.tok.Type == lexer.LeftBracket {
 			elem.X = p.parseImportIndexExpr(elem.X)
 		}
@@ -952,8 +1026,7 @@ func (p *parser) parseImportIndexExpr(x ast.Node) ast.Node {
 			panic("expected identifier")
 		}
 		var elem ast.CommaElement
-		elem.X = &ast.Ident{Name: p.tok}
-		p.next()
+		elem.X = p.expectIdent()
 		if p.tok.Type == lexer.Comma {
 			elem.Comma = p.tok
 			p.next()
@@ -976,8 +1049,7 @@ func (p *parser) parseTypeDecl() ast.Node {
 	if p.tok.Type != lexer.Ident {
 		panic("missing identifier")
 	}
-	typeDecl.Name = &ast.Ident{Name: p.tok}
-	p.next()
+	typeDecl.Name = p.expectIdent()
 	for p.tok.Type == lexer.TypeArg {
 		typeDecl.TypeParams = append(typeDecl.TypeParams, p.parseNamedTypeArgument())
 	}
@@ -1039,12 +1111,13 @@ func (p *parser) parseTupleTypeConstraint(parseAssignment bool) ast.Node {
 }
 
 // 'a or '1
-func (p *parser) parseNamedTypeArgument() ast.Node {
+func (p *parser) parseNamedTypeArgument() *ast.TypeArg {
 	defer p.trace("parseNamedTypeArgument")()
 	if p.tok.Type != lexer.TypeArg {
 		panic("expected type argument")
 	}
 	typeArg := p.tok
+	p.unique.Put(typeArg.Data)
 	p.next()
 	return &ast.TypeArg{
 		TypeArg: typeArg,
@@ -1071,23 +1144,18 @@ func (p *parser) parseTypeApplication(name ast.Node) ast.Node {
 // Type Name can be a SelectorExpr or type parameter, since we could be accessing a type from another package.
 func (p *parser) parseTypeName() ast.Node {
 	defer p.trace("parseTypeName")()
-	if p.tok.Type != lexer.Ident {
-		panic("missing identifier")
-	}
-	var typeName ast.Node = &ast.Ident{Name: p.tok}
-	p.next()
+	var typeName ast.Node = p.expectIdent()
 	for p.tok.Type == lexer.Period {
 		period := p.tok
 		p.next()
 		if p.tok.Type != lexer.Ident {
 			panic("missing identifier")
 		}
-		ident := ast.Ident{Name: p.tok}
-		p.next()
+		ident := p.expectIdent()
 		typeName = &ast.SelectorExpr{
 			X:      typeName,
 			Period: period,
-			Name:   &ident,
+			Name:   ident,
 		}
 	}
 	return typeName
@@ -1274,8 +1342,7 @@ func (p *parser) parseSumType() ast.Node {
 		if p.tok.Type != lexer.Ident {
 			panic("missing identifier")
 		}
-		sumElem.Name = &ast.Ident{Name: p.tok}
-		p.next()
+		sumElem.Name = p.expectIdent()
 		if beginsAnonType(p.tok.Type) {
 			sumElem.Type = p.parseTypeBody(false, false)
 		}
@@ -1318,8 +1385,7 @@ func (p *parser) parseTupleType() ast.Node {
 			if t := p.peek(); t.Type == lexer.Colon {
 				// Field name.
 				var field ast.Field
-				field.Name = &ast.Ident{Name: p.tok}
-				p.next()
+				field.Name = p.expectIdent()
 				field.Colon = p.tok
 				p.next()
 				field.Type = p.parseTypeBody(false, false)
@@ -1565,8 +1631,7 @@ func (p *parser) parseImportMemberTuple() ast.Node {
 		if p.tok.Type != lexer.Ident {
 			panic("expected identifier")
 		}
-		member := &ast.Ident{Name: p.tok}
-		p.next()
+		member := p.expectIdent()
 		elem.X = p.parseImportAliasExpr(member)
 		if p.tok.Type == lexer.Comma {
 			elem.Comma = p.tok
@@ -1591,8 +1656,7 @@ func (p *parser) parseImportType() ast.Node {
 	if p.tok.Type != lexer.Ident {
 		panic("missing identifier")
 	}
-	def := &ast.Ident{Name: p.tok}
-	p.next()
+	def := p.expectIdent()
 	switch p.tok.Type {
 	case lexer.LeftParen:
 		mt := p.parseImportMemberTuple()
@@ -1608,8 +1672,7 @@ func (p *parser) parseImportType() ast.Node {
 		if p.tok.Type != lexer.Ident {
 			panic("missing identifier")
 		}
-		sel.Name = &ast.Ident{Name: p.tok}
-		p.next()
+		sel.Name = p.expectIdent()
 		return sel
 	default:
 		return def
@@ -1629,8 +1692,7 @@ func (p *parser) parseImportAliasExpr(x ast.Node) ast.Node {
 		if p.tok.Type != lexer.Ident {
 			panic("missing identifier")
 		}
-		alias := &ast.Ident{Name: p.tok}
-		p.next()
+		alias := p.expectIdent()
 		return &ast.As{
 			X:     x,
 			As:    as,
@@ -1681,36 +1743,31 @@ func (p *parser) parseImportPackageElem() ast.Node {
 	}
 	impPath := &ast.ImportPath{
 		Lit:         p.tok,
-		PackageName: path.Base(prefix),
+		PackageName: path.Base(prefix), // add to unique
 	}
-	p.imports[impPath.Lit.Data] = struct{}{}
+	p.unique.Put(impPath.PackageName)
+	p.imports.Put(impPath.Lit.Data)
 	p.next()
 	switch p.tok.Type {
 	case lexer.Period:
 		tok := p.tok
 		p.next()
-		if p.tok.Type != lexer.Ident {
-			panic("missing identifier")
-		}
+		name := p.expectIdent()
 		sel := &ast.SelectorExpr{
 			X:      impPath,
 			Period: tok,
-			Name:   &ast.Ident{Name: p.tok},
+			Name:   name,
 		}
-		p.next()
 		switch p.tok.Type {
 		case lexer.Period:
 			tok := p.tok
 			p.next()
-			if p.tok.Type != lexer.Ident {
-				panic("missing identifier")
-			}
+			name := p.expectIdent()
 			sel = &ast.SelectorExpr{
 				X:      sel,
 				Period: tok,
-				Name:   &ast.Ident{Name: p.tok},
+				Name:   name,
 			}
-			p.next()
 			return sel
 		case lexer.LeftParen:
 			// tuple of identifers with optional "as"
@@ -1746,8 +1803,7 @@ func (p *parser) parseImportPackageAlias() ast.Node {
 		if p.tok.Type != lexer.Ident {
 			panic("missing identifier")
 		}
-		alias := &ast.Ident{Name: p.tok}
-		p.next()
+		alias := p.expectIdent()
 		return &ast.As{
 			X:     elem,
 			As:    as,
@@ -1780,21 +1836,30 @@ func (p *parser) parseExprOrStmt() ast.Node {
 	defer p.trace("parseExprOrStmt")()
 	switch p.tok.Type {
 	case lexer.Import:
-		return p.parseImportDecl()
+		return p.markEnv(p.parseImportDecl())
 	case lexer.Let:
-		return p.parseLetDecl()
+		return p.markEnv(p.parseLetDecl())
 	case lexer.Var:
-		return p.parseVarDecl()
+		return p.markEnv(p.parseVarDecl())
 	case lexer.Type:
-		return p.parseTypeDecl()
+		return p.markEnv(p.parseTypeDecl())
 	case lexer.Semicolon, lexer.LineTerminator:
 		return &ast.EmptyExpr{}
 	default:
-		return p.parseExpr()
+		// doesn't introduce a binding so nothing to mark
+		x := p.parseExpr()
+		// if x was a function declaration, we need to mark it.
+		if f, ok := x.(*ast.Function); ok {
+			if f.Name == nil {
+				panic("function declaration missing name")
+			}
+			p.markEnv(x)
+		}
+		return x
 	}
 }
 
-func (p *parser) markExports(x ast.Node, bind ast.Bind) {
+func (p *parser) markEnvBind(x ast.Node, bind ast.Bind) {
 	switch x := x.(type) {
 	case *ast.Ident:
 		p.env.Add(x.Name.Data, bind)
@@ -1806,12 +1871,12 @@ func (p *parser) markExports(x ast.Node, bind ast.Bind) {
 		// }
 	case *ast.Tuple:
 		for _, elem := range x.Elements {
-			p.markExports(elem, bind)
+			p.markEnvBind(elem, bind)
 		}
 	case *ast.CommaElement:
-		p.markExports(x.X, bind)
+		p.markEnvBind(x.X, bind)
 	case *ast.TypeAnnotation:
-		p.markExports(x.Destructure, bind)
+		p.markEnvBind(x.Destructure, bind)
 	case *ast.As:
 		if _, ok := x.X.(*ast.ImportPath); ok {
 			// package alias
@@ -1822,9 +1887,9 @@ func (p *parser) markExports(x ast.Node, bind ast.Bind) {
 		}
 	case *ast.CallExpr:
 		if _, ok := x.Elements[0].(*ast.ImportPath); !ok {
-			p.markExports(x.Elements[0], ast.UnresolvedImportedBind{})
+			p.markEnvBind(x.Elements[0], ast.UnresolvedImportedBind{})
 		}
-		p.markExports(x.Elements[1], ast.UnresolvedImportedBind{})
+		p.markEnvBind(x.Elements[1], ast.UnresolvedImportedBind{})
 	case *ast.SelectorExpr:
 		p.env.Add(x.Name.Name.Data, ast.UnresolvedImportedBind{})
 	case *ast.ImportPath:
@@ -1832,18 +1897,18 @@ func (p *parser) markExports(x ast.Node, bind ast.Bind) {
 	}
 }
 
-func (p *parser) markTopLevel(x ast.Node) ast.Node {
+func (p *parser) markEnv(x ast.Node) ast.Node {
 	switch x := x.(type) {
 	case *ast.LetDecl:
-		p.markExports(x.Destructure, ast.VarBind{})
+		p.markEnvBind(x.Destructure, ast.VarBind{})
 	case *ast.LetFunction:
-		p.markExports(x.Name, ast.VarBind{})
+		p.markEnvBind(x.Name, ast.VarBind{})
 	case *ast.Function:
-		p.markExports(x.Name, ast.VarBind{})
+		p.markEnvBind(x.Name, ast.VarBind{})
 	case *ast.TypeDecl:
-		p.markExports(x.Name, ast.TypeBind{})
+		p.markEnvBind(x.Name, ast.TypeBind{})
 	case *ast.ImportDecl:
-		p.markExports(x.Decl, ast.PackageBind{})
+		p.markEnvBind(x.Decl, ast.PackageBind{})
 	}
 	return x
 }
@@ -1854,17 +1919,17 @@ func (p *parser) parseTopLevelDeclaration() ast.Node {
 	case lexer.Import:
 		// TODO: imports should only be at the top?
 		// also add these to decls
-		return p.markTopLevel(p.parseImportDecl())
+		return p.markEnv(p.parseImportDecl())
 	case lexer.Let:
-		return p.markTopLevel(p.parseLetDecl())
+		return p.markEnv(p.parseLetDecl())
 	case lexer.Type:
-		return p.markTopLevel(p.parseTypeDecl())
+		return p.markEnv(p.parseTypeDecl())
 	case lexer.Impl:
 		return p.parseImplDecl()
 	case lexer.Semicolon, lexer.LineTerminator:
 		return &ast.EmptyExpr{}
 	case lexer.Fun:
-		return p.markTopLevel(p.parseFun(true))
+		return p.markEnv(p.parseFun(true))
 	}
 	// TODO: add these declarations to the module exports
 	panic(fmt.Sprintf("invalid top level declaration: %v", p.tok))

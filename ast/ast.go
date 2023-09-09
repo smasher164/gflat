@@ -6,6 +6,7 @@ import (
 	"unicode"
 
 	"github.com/smasher164/gflat/lexer"
+	"github.com/zyedidia/generic/mapset"
 )
 
 type Node interface {
@@ -115,8 +116,7 @@ type File struct {
 	PackageName    *Ident
 	Body           *Block
 	trailingTrivia []lexer.Token
-	Imports        map[string]struct{}
-	Env            *Env
+	Imports        mapset.Set[string]
 }
 
 func (f *File) SetTrailingTrivia(tt []lexer.Token) {
@@ -124,16 +124,17 @@ func (f *File) SetTrailingTrivia(tt []lexer.Token) {
 }
 
 func (f *File) ASTString(depth int) string {
+	// TODO: do we really need to collect imports at the file level?
 	if f.Package.Type == lexer.Package {
 		return fmt.Sprintf(
-			"File\n%sFilename: %s\n%sPackage: %s\n%sPackageName: %s\n%sBody: %s\n%sTrailingTrivia: %v\n%sImports: %v\n%sEnv:\n%v",
+			"File\n%sFilename: %s\n%sPackage: %s\n%sPackageName: %s\n%sBody: %s\n%sTrailingTrivia: %v\n%sImports: %v",
 			indent(depth+1), f.Filename,
 			indent(depth+1),
 			f.Package, indent(depth+1),
 			f.PackageName.ASTString(depth+1), indent(depth+1),
 			f.Body.ASTString(depth+1), indent(depth+1),
 			f.trailingTrivia, indent(depth+1),
-			f.Imports, indent(depth+1), indentLines(depth+2, f.Env.String()))
+			KeysOfSet(f.Imports))
 	}
 	return fmt.Sprintf(
 		"File\n%sFilename: %s\n%sBody: %s\n%sTrailingTrivia: %v\n%sImports: %v",
@@ -141,7 +142,7 @@ func (f *File) ASTString(depth int) string {
 		indent(depth+1),
 		f.Body.ASTString(depth+1), indent(depth+1),
 		f.trailingTrivia, indent(depth+1),
-		f.Imports)
+		KeysOfSet(f.Imports))
 }
 
 func (f *File) LeadingTrivia() []lexer.Token {
@@ -194,29 +195,41 @@ func (s *Stmt) Span() lexer.Span {
 	return spanOf(s.Stmt).Add(s.Terminator.Span)
 }
 
+func KeysOfSet[T comparable](m mapset.Set[T]) []T {
+	var keys []T
+	m.Each(func(key T) {
+		keys = append(keys, key)
+	})
+	return keys
+}
+
 type Package struct {
+	Path         string
 	Name         string
 	PackageFiles []*File
 	ScriptFile   *File
-	Imports      map[string]struct{}
+	Imports      mapset.Set[string]
 	Env          *Env
+	Unique       mapset.Set[string]
 }
 
 func (p *Package) ASTString(depth int) string {
 	if p.ScriptFile == nil {
-		return fmt.Sprintf("Package\n%sName: %s\n%sPackageFiles: %s\n%sImports: %v\n%sEnv:\n%v",
-			indent(depth+1),
-			p.Name, indent(depth+1),
+		return fmt.Sprintf("Package\n%sPath: %s\n%sName: %s\n%sPackageFiles: %s\n%sImports: %v\n%sEnv:\n%v\r%sUnique: %v",
+			indent(depth+1), p.Path,
+			indent(depth+1), p.Name, indent(depth+1),
 			printFileSlice(depth+1, p.PackageFiles), indent(depth+1),
-			p.Imports, indent(depth+1), indentLines(depth+2, p.Env.String()))
+			KeysOfSet(p.Imports), indent(depth+1), indentLines(depth+2, p.Env.String()),
+			indent(depth+1), KeysOfSet(p.Unique))
 	}
 	return fmt.Sprintf(
-		"Package\n%sName: %s\n%sPackageFiles: %s\n%sScriptFile: %s\n%sImports: %v",
+		"Package\n%sPath: %s\n%sName: %s\n%sPackageFiles: %s\n%sScriptFile: %s\n%sImports: %v\n%sUnique: %v",
+		indent(depth+1), p.Path,
 		indent(depth+1),
 		p.Name, indent(depth+1),
 		printFileSlice(depth+1, p.PackageFiles), indent(depth+1),
 		p.ScriptFile.ASTString(depth+1), indent(depth+1),
-		p.Imports)
+		KeysOfSet(p.Imports), indent(depth+1), KeysOfSet(p.Unique))
 }
 
 func (p *Package) LeadingTrivia() []lexer.Token {
@@ -228,10 +241,18 @@ func (p *Package) Span() lexer.Span {
 }
 
 type Ident struct {
-	Name lexer.Token
+	Qualifier string
+	Name      lexer.Token
 }
 
 func (id *Ident) ASTString(depth int) string {
+	return id.Name.String()
+}
+
+func (id *Ident) QualifiedName() string {
+	if id.Qualifier != "" {
+		return id.Qualifier + "." + id.Name.String()
+	}
 	return id.Name.String()
 }
 
@@ -287,12 +308,6 @@ func (i *Illegal) Span() lexer.Span {
 	return i.span.Add(spanOf(i.Node))
 }
 
-type Block struct {
-	LeftBrace  lexer.Token
-	Body       []Node
-	RightBrace lexer.Token
-}
-
 func printCaseSlice(depth int, nodes []*PatternCase) string {
 	if len(nodes) == 0 {
 		return "[]"
@@ -329,13 +344,20 @@ func printFileSlice(depth int, nodes []*File) string {
 	return s
 }
 
+type Block struct {
+	LeftBrace  lexer.Token
+	Body       []Node
+	RightBrace lexer.Token
+	Env        *Env
+}
+
 func (b *Block) ASTString(depth int) string {
 	return fmt.Sprintf(
-		"Block\n%sLeftBrace: %s\n%sBody: %s\n%sRightBrace: %s",
+		"Block\n%sLeftBrace: %s\n%sBody: %s\n%sRightBrace: %s\n%sEnv:\n%v",
 		indent(depth+1),
 		b.LeftBrace, indent(depth+1),
 		printNodeSlice(depth+1, b.Body), indent(depth+1),
-		b.RightBrace)
+		b.RightBrace, indent(depth+1), indentLines(depth+2, b.Env.String()))
 }
 
 func (b *Block) LeadingTrivia() []lexer.Token {
@@ -458,6 +480,7 @@ type LetFunction struct {
 	Signature  *FunctionSignature
 	Equals     lexer.Token
 	Body       Node
+	Env        *Env
 }
 
 func (f *LetFunction) LeadingTrivia() []lexer.Token {
@@ -469,7 +492,7 @@ func (f *LetFunction) Span() lexer.Span {
 }
 
 func (f *LetFunction) ASTString(depth int) string {
-	// optional fields: TypeParams, Body
+	// optional fields: TypeParams, Body, Env
 	buf := new(strings.Builder)
 	buf.WriteString(fmt.Sprintf("LetFunction\n%sLet: %s\n", indent(depth+1), f.Let))
 	if len(f.TypeParams) > 0 {
@@ -480,16 +503,20 @@ func (f *LetFunction) ASTString(depth int) string {
 	if f.Body != nil {
 		buf.WriteString(fmt.Sprintf("%sEquals: %s\n%sBody: %s", indent(depth+1), f.Equals, indent(depth+1), f.Body.ASTString(depth+1)))
 	}
+	if f.Env != nil {
+		buf.WriteString(fmt.Sprintf("%sEnv:\n%v", indent(depth+1), indentLines(depth+2, f.Env.String())))
+	}
 	return buf.String()
 }
 
 type Function struct {
 	Fun        lexer.Token
 	TypeParams []Node
-	Name       Node
-	Signature  Node
+	Name       *Ident
+	Signature  *FunctionSignature
 	FatArrow   lexer.Token
 	Body       Node
+	Env        *Env
 }
 
 func (f *Function) LeadingTrivia() []lexer.Token {
@@ -513,6 +540,9 @@ func (f *Function) ASTString(depth int) string {
 	buf.WriteString(fmt.Sprintf("%sSignature: %s\n", indent(depth+1), f.Signature.ASTString(depth+1)))
 	if f.Body != nil {
 		buf.WriteString(fmt.Sprintf("%sFatArrow: %s\n%sBody: %s", indent(depth+1), f.FatArrow, indent(depth+1), f.Body.ASTString(depth+1)))
+	}
+	if f.Env != nil {
+		buf.WriteString(fmt.Sprintf("%sEnv:\n%v", indent(depth+1), indentLines(depth+2, f.Env.String())))
 	}
 	return buf.String()
 }

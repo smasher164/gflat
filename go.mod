@@ -1,6 +1,6 @@
 module github.com/smasher164/gflat
 
-go 1.19
+go 1.21
 
 require (
 	github.com/kr/pretty v0.3.0
@@ -77,6 +77,7 @@ require (
 	github.com/prometheus/common v0.26.0 // indirect
 	github.com/prometheus/procfs v0.6.0 // indirect
 	github.com/russross/blackfriday/v2 v2.1.0 // indirect
+	github.com/segmentio/fasthash v1.0.3 // indirect
 	github.com/sergi/go-diff v1.1.0 // indirect
 	github.com/xanzy/ssh-agent v0.3.0 // indirect
 	github.com/yuin/goldmark v1.4.13 // indirect
@@ -103,6 +104,7 @@ require (
 	github.com/rogpeppe/go-internal v1.6.1 // indirect
 	github.com/samber/lo v1.38.1
 	github.com/sanity-io/litter v1.5.5
+	github.com/zyedidia/generic v1.2.1
 	golang.org/x/mod v0.7.0 // indirect
 	golang.org/x/sys v0.5.0 // indirect
 	golang.org/x/text v0.7.0 // indirect
