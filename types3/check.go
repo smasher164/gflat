@@ -91,9 +91,11 @@ func (pc *PackageChecker) CheckBlock(b *ast.Block) {
 		case *ast.TypeDecl:
 			// pc.CheckTypeDecl(b.Env, stmt)
 		case *ast.LetFunction:
+			f := pc.inferFunction(stmt.Name.Name.Data, stmt.TypeParams, stmt.Signature, stmt.Body, stmt.Env)
+			fmt.Println(f)
 		case *ast.Function:
-			// TODO: repurpose this for LetFunction
-			f := pc.inferFunction(stmt)
+			// we assume it has a name here
+			f := pc.inferFunction(stmt.Name.Name.Data, stmt.TypeParams, stmt.Signature, stmt.Body, stmt.Env)
 			fmt.Println(f)
 		case *ast.ImportDecl:
 		case *ast.EmptyExpr:
@@ -102,14 +104,16 @@ func (pc *PackageChecker) CheckBlock(b *ast.Block) {
 	}
 }
 
-func (pc *PackageChecker) inferFunction(f *ast.Function) ast.Type {
+func (pc *PackageChecker) inferFunction(name string, typeParams []ast.Node, sig *ast.FunctionSignature, body ast.Node, fenv *ast.Env) ast.Type {
 	pc.enterLevel()
 	// TODO: explicit types, type params, and arrows
 	typeOfFn := pc.NewTypeVar()
 	typeOfParam := pc.NewTypeVar()
-	pc.env.SetVarType(f.Name.Name.Data, typeOfFn)
-	old := pc.pushEnv(f.Env)
-	if ann, ok := f.Signature.Param.(*ast.TypeAnnotation); ok {
+	if name != "" {
+		pc.env.SetVarType(name, typeOfFn)
+	}
+	old := pc.pushEnv(fenv)
+	if ann, ok := sig.Param.(*ast.TypeAnnotation); ok {
 		if ann.Type != nil {
 			// TODO: reify type
 		} else {
@@ -117,12 +121,15 @@ func (pc *PackageChecker) inferFunction(f *ast.Function) ast.Type {
 			pc.env.Update(paramName, ast.VarBind{Type: typeOfParam})
 		}
 	}
-	tyBody := pc.inferExpr(f.Body)
+	tyBody := pc.inferExpr(body)
 	pc.popEnv(old)
 	pc.unify(typeOfFn, ast.ArrowType{typeOfParam, tyBody})
 	pc.leaveLevel()
-	pc.env.SetVarType(f.Name.Name.Data, pc.gen(typeOfFn))
-	return typeOfFn
+	genTy := pc.gen(typeOfFn)
+	if name != "" {
+		pc.env.SetVarType(name, genTy)
+	}
+	return genTy
 }
 
 func force(ty ast.Type) ast.Type {

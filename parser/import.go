@@ -83,17 +83,20 @@ func (i *Importer) ImportSingle(path, scriptFile string) (pkg ast.Node, err erro
 		return pkg, err
 	}
 	scriptFileFound := false
+	fileCount := 0
 	filenames := lo.FilterMap(entries, func(entry fs.DirEntry, i int) (string, bool) {
 		name := entry.Name()
 		if filepath.Ext(name) != ".gf" {
 			return "", false
 		}
+		fileCount++
 		if name == scriptFile {
 			scriptFileFound = true
+			return "", false
 		}
 		return name, true
 	})
-	if len(filenames) == 0 {
+	if fileCount == 0 {
 		return pkg, fmt.Errorf("no .gf files found in package %s", path)
 	}
 	if !scriptFileFound && scriptFile != "" {

@@ -87,9 +87,9 @@ func ParsePackage(pathToPkg string, fsys fs.FS, scriptFile string, filenames ...
 		pkg.Unique.Put(name)
 	}
 	var first error
-	// if scriptFile != "" {
-	// 	filenames = append(filenames, scriptFile)
-	// }
+	if scriptFile != "" {
+		filenames = append(filenames, scriptFile)
+	}
 	for _, filename := range filenames {
 		l, err := lexer.NewLexer(fsys, filename)
 		if err != nil {
