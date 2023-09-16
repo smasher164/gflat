@@ -20,7 +20,8 @@ func Test(t *testing.T) {
 	f := fatal(t)
 	fsys := fsx.TestFS([][2]string{
 		{"a.gf", `
-		let id x = x
+		let f x = g x
+		let g x = f x
 		`},
 	})
 	importer := parser.NewImporter(fsys)

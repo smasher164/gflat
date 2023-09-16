@@ -25,6 +25,8 @@ type parser struct {
 	imports            mapset.Set[string]
 	env                *ast.Env
 	unique             mapset.Set[string]
+	tvCount            int
+	level              int
 	qualifier          string
 }
 
@@ -58,6 +60,14 @@ func (p *parser) trace(msg string) func() {
 	return func() {}
 }
 
+func (p *parser) enterLevel() {
+	p.level++
+}
+
+func (p *parser) leaveLevel() {
+	p.level--
+}
+
 // TODO: We should probably not expose mapset.Set to users.
 func ParseFile(l Lexer, fileEnv *ast.Env, unique mapset.Set[string], qualifier string) (ast.Node, error) {
 	// l, err := lexer.NewLexer(fsys, filename)
@@ -70,6 +80,7 @@ func ParseFile(l Lexer, fileEnv *ast.Env, unique mapset.Set[string], qualifier s
 		env:       fileEnv,
 		unique:    unique,
 		qualifier: qualifier,
+		level:     1,
 		// qualifier: path.Join(pathToPkg, filename),
 	}
 	f := p.parseFile()
@@ -225,6 +236,8 @@ func (p *parser) parseFile() *ast.File {
 // TOOD: add let f x = x syntax
 func (p *parser) parseLetDecl() ast.Node {
 	defer p.trace("parseLetDecl")()
+	// p.enterLevel()
+	// defer p.leaveLevel()
 	letTok := p.tok
 	p.next()
 	letFun := &ast.LetFunction{
@@ -348,7 +361,7 @@ func (p *parser) parseFunctionSignature() *ast.FunctionSignature {
 	if p.tok.Type == lexer.Ident {
 		var param ast.TypeAnnotation
 		paramName := p.expectIdent()
-		p.env.Add(paramName.Name.Data, ast.VarBind{})
+		p.env.Add(paramName.Name.Data, ast.VarBind{p.freshTypeVar()})
 		param.Destructure = paramName
 		if p.tok.Type == lexer.Colon {
 			param.Colon = p.tok
@@ -391,6 +404,8 @@ func (p *parser) popScope() {
 
 func (p *parser) parseFun(topLevel bool) ast.Node {
 	defer p.trace("parseFun")()
+	// p.enterLevel()
+	// defer p.leaveLevel()
 	p.pushScope()
 	defer p.popScope()
 	fun := ast.Function{
@@ -1838,6 +1853,8 @@ func (p *parser) parseExprOrStmt() ast.Node {
 	case lexer.Import:
 		return p.markEnv(p.parseImportDecl())
 	case lexer.Let:
+		p.enterLevel()
+		defer p.leaveLevel()
 		return p.markEnv(p.parseLetDecl())
 	case lexer.Var:
 		return p.markEnv(p.parseVarDecl())
@@ -1846,6 +1863,8 @@ func (p *parser) parseExprOrStmt() ast.Node {
 	case lexer.Semicolon, lexer.LineTerminator:
 		return &ast.EmptyExpr{}
 	default:
+		p.enterLevel()
+		defer p.leaveLevel()
 		// doesn't introduce a binding so nothing to mark
 		x := p.parseExpr()
 		// if x was a function declaration, we need to mark it.
@@ -1900,17 +1919,31 @@ func (p *parser) markEnvBind(x ast.Node, bind ast.Bind) {
 func (p *parser) markEnv(x ast.Node) ast.Node {
 	switch x := x.(type) {
 	case *ast.LetDecl:
-		p.markEnvBind(x.Destructure, ast.VarBind{})
+		p.markEnvBind(x.Destructure, ast.VarBind{p.freshTypeVar()})
 	case *ast.LetFunction:
-		p.markEnvBind(x.Name, ast.VarBind{})
+		p.markEnvBind(x.Name, ast.VarBind{p.freshTypeVar()})
 	case *ast.Function:
-		p.markEnvBind(x.Name, ast.VarBind{})
+		p.markEnvBind(x.Name, ast.VarBind{p.freshTypeVar()})
 	case *ast.TypeDecl:
 		p.markEnvBind(x.Name, ast.TypeBind{})
 	case *ast.ImportDecl:
 		p.markEnvBind(x.Decl, ast.PackageBind{})
 	}
 	return x
+}
+
+func (p *parser) freshTypeVar() ast.TypeVar {
+	lvl := p.level
+	for {
+		// we use '#' to ensure it doesn't conflict with any user-defined type variables
+		name := fmt.Sprintf("'#%d", p.tvCount)
+		p.tvCount++
+		if !p.unique.Has(name) {
+			p.unique.Put(name)
+			// use levels so we don't have to adjust it in the typechecker
+			return ast.NewTypeVar(name, lvl)
+		}
+	}
 }
 
 func (p *parser) parseTopLevelDeclaration() ast.Node {
@@ -1921,6 +1954,8 @@ func (p *parser) parseTopLevelDeclaration() ast.Node {
 		// also add these to decls
 		return p.markEnv(p.parseImportDecl())
 	case lexer.Let:
+		p.enterLevel()
+		defer p.leaveLevel()
 		return p.markEnv(p.parseLetDecl())
 	case lexer.Type:
 		return p.markEnv(p.parseTypeDecl())
@@ -1929,6 +1964,8 @@ func (p *parser) parseTopLevelDeclaration() ast.Node {
 	case lexer.Semicolon, lexer.LineTerminator:
 		return &ast.EmptyExpr{}
 	case lexer.Fun:
+		p.enterLevel()
+		defer p.leaveLevel()
 		return p.markEnv(p.parseFun(true))
 	}
 	// TODO: add these declarations to the module exports

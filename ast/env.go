@@ -55,6 +55,18 @@ func (e *Env) SetVarType(name string, ty Type) {
 	}
 }
 
+func (e *Env) GetVarTypeLocal(name string) (ty Type, ok bool) {
+	b, ok := e.LookupLocal(name)
+	if !ok {
+		return nil, false
+	}
+	vb, ok := b.(VarBind)
+	if !ok {
+		return nil, false
+	}
+	return vb.Type, true
+}
+
 func (e *Env) GetVarTypeStack(name string) (ty Type, ok bool) {
 	b, _, ok := e.LookupStack(name)
 	if !ok {

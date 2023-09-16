@@ -83,53 +83,119 @@ func (pc *PackageChecker) popEnv(old *ast.Env) {
 func (pc *PackageChecker) CheckBlock(b *ast.Block) {
 	old := pc.pushEnv(b.Env)
 	defer pc.popEnv(old)
+	// We do three passes over the block.
+	// 1. Instantiate typevars for all bindings.
+	// 2. Infer types for all bindings.
+	// 3. Generalize all bindings.
+	// TODO: Get rid of the first pass by doing it during parse.
+	// However it's unclear what the level should be then.
+	// Technically, we can modify the level here, since it's behind a ref.
+
+	// pc.enterLevel()
+	// for name, bind := range b.Env.Symbols {
+	// 	if varBind, ok := bind.(ast.VarBind); ok {
+	// 		varBind.Type = pc.NewTypeVar()
+	// 		b.Env.Symbols[name] = varBind
+	// 	}
+	// }
+	// pc.leaveLevel()
 	for _, stmt := range b.Body {
 		switch stmt := stmt.(type) {
 		case *ast.LetDecl:
 			// pc.CheckLetDecl(b.Env, stmt)
+			pc.inferLetDecl(stmt)
+			// fmt.Println("LET_DECL", l)
 		case *ast.VarDecl:
 		case *ast.TypeDecl:
 			// pc.CheckTypeDecl(b.Env, stmt)
 		case *ast.LetFunction:
 			f := pc.inferFunction(stmt.Name.Name.Data, stmt.TypeParams, stmt.Signature, stmt.Body, stmt.Env)
-			fmt.Println(f)
+			fmt.Println("LET_FUNCTION", f)
 		case *ast.Function:
 			// we assume it has a name here
-			f := pc.inferFunction(stmt.Name.Name.Data, stmt.TypeParams, stmt.Signature, stmt.Body, stmt.Env)
-			fmt.Println(f)
+			pc.inferFunction(stmt.Name.Name.Data, stmt.TypeParams, stmt.Signature, stmt.Body, stmt.Env)
+			// fmt.Println("FUNCTION", f)
 		case *ast.ImportDecl:
 		case *ast.EmptyExpr:
+		case *ast.Stmt:
 		default: // expression
+		}
+	}
+	// go through and generalize all bindings in the env
+	// TODO: does this deal with imported bindings correctly?
+	for name, bind := range b.Env.Symbols {
+		if varBind, ok := bind.(ast.VarBind); ok {
+			varBind.Type = pc.gen(varBind.Type)
+			b.Env.Symbols[name] = varBind
+			fmt.Println("GEN", name, varBind.Type)
 		}
 	}
 }
 
+// TODO: ensure that a lookup of a typevar is stable.
+
+func (pc *PackageChecker) inferLetDecl(d *ast.LetDecl) ast.Type {
+	pc.enterLevel()
+	defer pc.leaveLevel()
+	var typeOfBinding ast.Type
+	if id, ok := d.Destructure.(*ast.Ident); ok {
+		typeOfBinding = must(pc.env.GetVarTypeLocal(id.Name.Data))
+		// if tvar, ok := typeOfBinding.(ast.TypeVar); ok {
+		// 	tvar.Ref.Level = pc.level
+		// }
+	} else {
+		panic(fmt.Sprintf("TODO inferLetDecl %T", d.Destructure))
+	}
+	typeOfRhs := pc.inferExpr(d.Rhs)
+	pc.unify(typeOfBinding, typeOfRhs)
+	pc.leaveLevel()
+	return typeOfBinding
+	// genTy := pc.gen(typeOfRhs)
+	// return genTy
+}
+
 func (pc *PackageChecker) inferFunction(name string, typeParams []ast.Node, sig *ast.FunctionSignature, body ast.Node, fenv *ast.Env) ast.Type {
 	pc.enterLevel()
+	defer pc.leaveLevel()
 	// TODO: explicit types, type params, and arrows
-	typeOfFn := pc.NewTypeVar()
-	typeOfParam := pc.NewTypeVar()
-	if name != "" {
-		pc.env.SetVarType(name, typeOfFn)
-	}
+	typeOfFn := must(pc.env.GetVarTypeLocal(name))
+	// if tvar, ok := typeOfFn.(ast.TypeVar); ok {
+	// 	tvar.Ref.Level = pc.level
+	// }
+	var typeOfParam ast.Type
+	// TODO: are we treating params right?
+	// param should already have a typevar in the env
+	// typeOfParam := pc.NewTypeVar()
+	// if tvar, ok := typeOfFn.(ast.TypeVar); ok {
+	// 	tvar.Ref.Level = pc.level
+	// }
+
+	// if name != "" {
+	// 	pc.env.SetVarType(name, typeOfFn)
+	// }
 	old := pc.pushEnv(fenv)
 	if ann, ok := sig.Param.(*ast.TypeAnnotation); ok {
 		if ann.Type != nil {
 			// TODO: reify type
 		} else {
 			paramName := ann.Destructure.(*ast.Ident).Name.Data
-			pc.env.Update(paramName, ast.VarBind{Type: typeOfParam})
+			typeOfParam = must(pc.env.GetVarTypeLocal(paramName))
+			// if tvar, ok := typeOfParam.(ast.TypeVar); ok {
+			// 	tvar.Ref.Level = pc.level
+			// }
+			// pc.env.Update(paramName, ast.VarBind{Type: typeOfParam})
 		}
 	}
 	tyBody := pc.inferExpr(body)
 	pc.popEnv(old)
 	pc.unify(typeOfFn, ast.ArrowType{typeOfParam, tyBody})
-	pc.leaveLevel()
-	genTy := pc.gen(typeOfFn)
-	if name != "" {
-		pc.env.SetVarType(name, genTy)
-	}
-	return genTy
+	// pc.leaveLevel()
+	return typeOfFn
+	// genTy := pc.gen(typeOfFn)
+	// if name != "" {
+	// 	pc.env.SetVarType(name, genTy)
+	// }
+	// return genTy
 }
 
 func force(ty ast.Type) ast.Type {
@@ -273,6 +339,15 @@ func (pc *PackageChecker) inferExpr(x ast.Node) ast.Type {
 	case *ast.Ident:
 		ty := must(pc.env.GetVarTypeStack(x.Name.Data))
 		return pc.inst(ty)
+	case *ast.CallExpr:
+		tyRes := pc.inferExpr(x.Elements[0])
+		for i := 1; i < len(x.Elements); i++ {
+			tyFun := tyRes
+			tyArg := pc.inferExpr(x.Elements[i])
+			tyRes = pc.NewTypeVar()
+			pc.unify(tyFun, ast.ArrowType{tyArg, tyRes})
+		}
+		return tyRes
 	default:
 		panic(fmt.Sprintf("TODO inferExpr %T", x))
 		// if bind, ok := pc.env.LookupStack(x.Name.Data); ok {
@@ -292,7 +367,7 @@ func (pc *PackageChecker) CheckLetDecl(env *ast.Env, d *ast.LetDecl) {
 func (pc *PackageChecker) NewTypeVar() ast.TypeVar {
 	lvl := pc.level
 	for {
-		name := fmt.Sprintf("'%d", pc.tvCount)
+		name := fmt.Sprintf("'#%d", pc.tvCount)
 		pc.tvCount++
 		if !pc.pkg.Unique.Has(name) {
 			pc.pkg.Unique.Put(name)
